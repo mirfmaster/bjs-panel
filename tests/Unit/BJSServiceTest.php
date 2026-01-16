@@ -6,7 +6,7 @@ use App\Enums\OrderStatus;
 use App\Services\BJS;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Cache\CacheManager;
-use PHPUnit\Framework\TestCase;
+use Illuminate\Foundation\Testing\TestCase;
 
 class BJSServiceTest extends TestCase
 {
@@ -222,7 +222,7 @@ class BJSServiceTest extends TestCase
 
     public function test_auth_state_disabled_in_production_when_login_toggle_is_false(): void
     {
-        putenv('APP_ENV=production');
+        $this->app->config['app.debug'] = false;
 
         $this->cacheData['bjs.session.login_toggle'] = false;
 
@@ -236,13 +236,11 @@ class BJSServiceTest extends TestCase
         );
 
         $this->assertEquals(BJS::AUTH_STATE_DISABLED, $bjs->getLastAuthState());
-
-        putenv('APP_ENV'); // Reset
     }
 
     public function test_auth_state_enabled_in_dev_environment(): void
     {
-        putenv('APP_ENV=local');
+        $this->app->config['app.debug'] = true;
 
         $bjs = new BJS(
             $this->createMockCache(),
@@ -254,8 +252,6 @@ class BJSServiceTest extends TestCase
         );
 
         $this->assertEquals(BJS::AUTH_STATE_VALID, $bjs->getLastAuthState());
-
-        putenv('APP_ENV'); // Reset
     }
 
     public function test_auth_state_constants_exist(): void
