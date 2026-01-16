@@ -99,10 +99,23 @@ class BJS
 
     private function checkLoginState(): void
     {
+        $isDev = in_array(env('APP_ENV', 'production'), ['local', 'development']);
+
         $failedAttempts = (int) $this->cache->get($this->failedAttemptsKey, 0);
 
-        if ($failedAttempts >= $this->maxFailedAttempts) {
+        if ($failedAttempts >= $this->maxFailedAttempts && !$isDev) {
             $this->cache->put($this->loginToggleKey, false);
+        }
+
+        if ($isDev) {
+            $hasCredentials = !empty($this->cache->get($this->usernameKey))
+                && !empty($this->cache->get($this->passwordKey));
+            $this->loginState = $hasCredentials;
+
+            if ($this->loginState) {
+                $this->validateAndRepairSession();
+            }
+            return;
         }
 
         $this->loginState = $this->cache->get($this->loginToggleKey, false) === true;
