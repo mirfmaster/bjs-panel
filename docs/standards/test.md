@@ -1,7 +1,7 @@
 # Test Standards
 
 ## PHPUnit
-- Use `PHPUnit\Framework\TestCase`
+- Use `Illuminate\Foundation\Testing\TestCase` for Laravel integration
 - Mock dependencies via constructor injection
 - Test behavior, not implementation details
 - Single test file per component when appropriate
