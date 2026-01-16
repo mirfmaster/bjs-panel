@@ -220,11 +220,42 @@ class BJSServiceTest extends TestCase
         $this->assertEquals('test', $result->data);
     }
 
-    public function test_auth_state_disabled_when_login_toggle_is_false(): void
+    public function test_auth_state_disabled_in_production_when_login_toggle_is_false(): void
     {
-        $bjs = $this->createBJS();
+        putenv('APP_ENV=production');
+
+        $this->cacheData['bjs.session.login_toggle'] = false;
+
+        $bjs = new BJS(
+            $this->createMockCache(),
+            null,
+            null,
+            '/tmp/bjs-cookies.json',
+            'https://belanjasosmed.com',
+            $this->config
+        );
 
         $this->assertEquals(BJS::AUTH_STATE_DISABLED, $bjs->getLastAuthState());
+
+        putenv('APP_ENV'); // Reset
+    }
+
+    public function test_auth_state_enabled_in_dev_environment(): void
+    {
+        putenv('APP_ENV=local');
+
+        $bjs = new BJS(
+            $this->createMockCache(),
+            null,
+            null,
+            '/tmp/bjs-cookies.json',
+            'https://belanjasosmed.com',
+            $this->config
+        );
+
+        $this->assertEquals(BJS::AUTH_STATE_VALID, $bjs->getLastAuthState());
+
+        putenv('APP_ENV'); // Reset
     }
 
     public function test_auth_state_constants_exist(): void

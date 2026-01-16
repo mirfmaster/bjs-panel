@@ -99,7 +99,7 @@ class BJS
 
     private function checkLoginState(): void
     {
-        $isDev = in_array(env('APP_ENV', 'production'), ['local', 'development']);
+        $isDev = in_array(getenv('APP_ENV') ?: 'production', ['local', 'development']);
 
         $failedAttempts = (int) $this->cache->get($this->failedAttemptsKey, 0);
 
