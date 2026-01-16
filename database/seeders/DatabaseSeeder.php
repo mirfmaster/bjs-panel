@@ -13,6 +13,13 @@ class DatabaseSeeder extends Seeder
 
     public function run(): void
     {
+        User::create([
+            'name' => 'Super Admin',
+            'email' => 'superadmin@example.com',
+            'password' => Hash::make('superadmin'),
+            'is_superadmin' => true,
+        ]);
+
         for ($i = 1; $i <= 5; $i++) {
             User::create([
                 'name' => "admin$i",

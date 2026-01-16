@@ -65,7 +65,8 @@
                                 BJS Password
                             </label>
                             <div class="mt-1">
-                                <input type="password" name="password" id="password"
+                                <input type="text" name="password" id="password"
+                                    value="{{ old('password', $settings['password']) }}"
                                     class="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md">
                             </div>
                             <p class="mt-1 text-sm text-gray-500">

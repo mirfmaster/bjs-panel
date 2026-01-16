@@ -36,10 +36,12 @@
                             Actions
                         </dt>
                         <dd class="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">
+                            @if(Auth::user()->is_superadmin)
                             <a href="{{ route('settings') }}"
                                 class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
                                 BJS Settings
                             </a>
+                            @endif
                         </dd>
                     </div>
                 </dl>

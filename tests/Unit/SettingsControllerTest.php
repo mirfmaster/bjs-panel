@@ -4,7 +4,7 @@ namespace Tests\Unit;
 
 use App\Http\Controllers\SettingsController;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\View\View;
 use Tests\TestCase;
 
@@ -20,15 +20,60 @@ class SettingsControllerTest extends TestCase
         parent::tearDown();
     }
 
-    public function test_index_returns_current_settings_from_cache(): void
+    private function mockSuperadminUser(): void
     {
-        Cache::shouldReceive('get')
+        $user = new \stdClass();
+        $user->is_superadmin = true;
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+    }
+
+    private function mockRegularUser(): void
+    {
+        $user = new \stdClass();
+        $user->is_superadmin = false;
+        Auth::shouldReceive('check')->andReturn(true);
+        Auth::shouldReceive('user')->andReturn($user);
+    }
+
+    public function test_non_superadmin_redirects_from_index(): void
+    {
+        $this->mockRegularUser();
+
+        $controller = new SettingsController();
+        $response = $controller->index();
+
+        $this->assertInstanceOf(\Illuminate\Http\RedirectResponse::class, $response);
+        $this->assertStringContainsString('dashboard', $response->getTargetUrl());
+    }
+
+    public function test_non_superadmin_redirects_from_update(): void
+    {
+        $this->mockRegularUser();
+
+        $controller = new SettingsController();
+        $request = Request::create('/settings', 'PUT', [
+            'username' => 'test',
+            'password' => 'test',
+        ]);
+
+        $response = $controller->update($request);
+
+        $this->assertInstanceOf(\Illuminate\Http\RedirectResponse::class, $response);
+        $this->assertStringContainsString('dashboard', $response->getTargetUrl());
+    }
+
+    public function test_superadmin_can_access_index(): void
+    {
+        $this->mockSuperadminUser();
+
+        \Illuminate\Support\Facades\Cache::shouldReceive('get')
             ->with('bjs.credentials.username', null)
             ->andReturn('testuser');
-        Cache::shouldReceive('get')
+        \Illuminate\Support\Facades\Cache::shouldReceive('get')
             ->with('bjs.credentials.password', null)
             ->andReturn('testpass');
-        Cache::shouldReceive('get')
+        \Illuminate\Support\Facades\Cache::shouldReceive('get')
             ->with('bjs.session.login_toggle', false)
             ->andReturn(true);
 
@@ -42,15 +87,17 @@ class SettingsControllerTest extends TestCase
         $this->assertTrue($view->getData()['settings']['login_toggle']);
     }
 
-    public function test_index_returns_default_toggle_when_not_set(): void
+    public function test_superadmin_can_access_index_with_defaults(): void
     {
-        Cache::shouldReceive('get')
+        $this->mockSuperadminUser();
+
+        \Illuminate\Support\Facades\Cache::shouldReceive('get')
             ->with('bjs.credentials.username', null)
             ->andReturn('');
-        Cache::shouldReceive('get')
+        \Illuminate\Support\Facades\Cache::shouldReceive('get')
             ->with('bjs.credentials.password', null)
             ->andReturn('');
-        Cache::shouldReceive('get')
+        \Illuminate\Support\Facades\Cache::shouldReceive('get')
             ->with('bjs.session.login_toggle', false)
             ->andReturn(false);
 
@@ -63,6 +110,8 @@ class SettingsControllerTest extends TestCase
 
     public function test_update_validates_username_required(): void
     {
+        $this->mockSuperadminUser();
+
         $controller = new SettingsController();
         $request = Request::create('/settings', 'PUT', [
             'username' => '',
@@ -75,6 +124,8 @@ class SettingsControllerTest extends TestCase
 
     public function test_update_validates_password_required(): void
     {
+        $this->mockSuperadminUser();
+
         $controller = new SettingsController();
         $request = Request::create('/settings', 'PUT', [
             'username' => 'newuser',

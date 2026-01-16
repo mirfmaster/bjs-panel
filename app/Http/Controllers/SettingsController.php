@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\View\View;
 
@@ -13,8 +14,13 @@ class SettingsController extends Controller
     private const PASSWORD_KEY = 'bjs.credentials.password';
     private const LOGIN_TOGGLE_KEY = 'bjs.session.login_toggle';
 
-    public function index(): View
+    public function index(): View|RedirectResponse
     {
+        if (!Auth::check() || !Auth::user()->is_superadmin) {
+            return redirect()->route('dashboard')
+                ->with('error', 'Only superadmin can access settings.');
+        }
+
         $settings = [
             'username' => Cache::get(self::USERNAME_KEY, ''),
             'password' => Cache::get(self::PASSWORD_KEY, ''),
@@ -26,6 +32,11 @@ class SettingsController extends Controller
 
     public function update(Request $request): RedirectResponse
     {
+        if (!Auth::check() || !Auth::user()->is_superadmin) {
+            return redirect()->route('dashboard')
+                ->with('error', 'Only superadmin can modify settings.');
+        }
+
         $validated = $request->validate([
             'username' => ['required', 'string'],
             'password' => ['required', 'string'],
