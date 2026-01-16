@@ -219,4 +219,19 @@ class BJSServiceTest extends TestCase
 
         $this->assertEquals('test', $result->data);
     }
+
+    public function test_auth_state_disabled_when_login_toggle_is_false(): void
+    {
+        $bjs = $this->createBJS();
+
+        $this->assertEquals(BJS::AUTH_STATE_DISABLED, $bjs->getLastAuthState());
+    }
+
+    public function test_auth_state_constants_exist(): void
+    {
+        $this->assertEquals('valid', BJS::AUTH_STATE_VALID);
+        $this->assertEquals('reauthenticated', BJS::AUTH_STATE_REAUTHENTICATED);
+        $this->assertEquals('failed', BJS::AUTH_STATE_FAILED);
+        $this->assertEquals('disabled', BJS::AUTH_STATE_DISABLED);
+    }
 }

@@ -14,11 +14,22 @@ class BJSGetOrders extends Command
 
     public function handle(): int
     {
-        $serviceId = $this->option('service') ?? $this->ask('Service ID', '11');
+        $serviceId = $this->option('service') ?? $this->ask('Service ID', '162');
         $status = $this->option('status') ?? 0;
 
         $bjs = new BJS();
         $orders = $bjs->getOrdersData((int) $serviceId, (int) $status);
+
+        $state = $bjs->getLastAuthState();
+        $stateMessages = [
+            BJS::AUTH_STATE_VALID => '<info>Using existing session</info>',
+            BJS::AUTH_STATE_REAUTHENTICATED => '<comment>Session renewed - re-authenticated</comment>',
+            BJS::AUTH_STATE_FAILED => '<error>Session authentication failed</error>',
+            BJS::AUTH_STATE_DISABLED => '<comment>Session is disabled</comment>',
+        ];
+
+        $this->line($stateMessages[$state] ?? 'Unknown state');
+        $this->newLine();
 
         if (empty($orders)) {
             $this->info('No orders found.');
@@ -43,7 +54,7 @@ class BJSGetOrders extends Command
         $table->render();
 
         $statusLabel = OrderStatus::from($status)->label();
-        $this->info("Found ".count($rows)." {$statusLabel} orders for service {$serviceId}");
+        $this->info("Found " . count($rows) . " {$statusLabel} orders for service {$serviceId}");
 
         return Command::SUCCESS;
     }
@@ -54,13 +65,13 @@ class BJSGetOrders extends Command
         $input = str_replace('@', '', $input);
 
         if (!filter_var($input, FILTER_VALIDATE_URL)) {
-            return '@'.$input;
+            return '@' . $input;
         }
 
         $path = parse_url($input, PHP_URL_PATH);
         $pathParts = explode('/', trim($path, '/'));
 
-        return '@'.($pathParts[0] ?? $input);
+        return '@' . ($pathParts[0] ?? $input);
     }
 
     private function getStatusLabel($order): string

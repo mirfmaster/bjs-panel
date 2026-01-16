@@ -11,6 +11,11 @@ use Psr\Http\Message\ResponseInterface;
 
 class BJS
 {
+    public const AUTH_STATE_VALID = 'valid';
+    public const AUTH_STATE_REAUTHENTICATED = 'reauthenticated';
+    public const AUTH_STATE_FAILED = 'failed';
+    public const AUTH_STATE_DISABLED = 'disabled';
+
     private CacheManager $cache;
     private Client $client;
     private Client $clientXML;
@@ -23,6 +28,12 @@ class BJS
     private string $passwordKey;
     private string $loginToggleKey;
     private string $failedAttemptsKey;
+    private string $lastAuthState = self::AUTH_STATE_DISABLED;
+
+    public function getLastAuthState(): string
+    {
+        return $this->lastAuthState;
+    }
 
     public function __construct(
         ?CacheManager $cache = null,
@@ -96,16 +107,21 @@ class BJS
 
         $this->loginState = $this->cache->get($this->loginToggleKey, false) === true;
 
-        if ($this->loginState) {
-            $this->validateAndRepairSession();
+        if (!$this->loginState) {
+            $this->lastAuthState = self::AUTH_STATE_DISABLED;
+            return;
         }
+
+        $this->validateAndRepairSession();
     }
 
     private function validateAndRepairSession(): void
     {
         $this->isValidSession = $this->isValidSession();
 
-        if (!$this->isValidSession) {
+        if ($this->isValidSession) {
+            $this->lastAuthState = self::AUTH_STATE_VALID;
+        } else {
             $this->reauthenticate();
         }
     }
@@ -116,6 +132,7 @@ class BJS
         $password = $this->cache->get($this->passwordKey);
 
         if (empty($username) || empty($password)) {
+            $this->lastAuthState = self::AUTH_STATE_FAILED;
             throw BJSException::authFailed('BJS credentials not found in cache');
         }
 
@@ -124,6 +141,7 @@ class BJS
         $csrfToken = $this->getCsrfToken($html);
 
         if (!$csrfToken) {
+            $this->lastAuthState = self::AUTH_STATE_FAILED;
             throw BJSException::authFailed('CSRF token not found');
         }
 
@@ -139,8 +157,10 @@ class BJS
         $this->isValidSession = $this->isValidSession();
 
         if ($this->isValidSession) {
+            $this->lastAuthState = self::AUTH_STATE_REAUTHENTICATED;
             $this->cache->put($this->failedAttemptsKey, 0);
         } else {
+            $this->lastAuthState = self::AUTH_STATE_FAILED;
             $this->incrementFailedAttempts();
             throw BJSException::sessionInvalid('Re-authentication failed');
         }
