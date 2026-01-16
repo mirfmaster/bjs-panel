@@ -1,0 +1,245 @@
+<?php
+
+namespace App\Utils;
+
+use GuzzleHttp\Client;
+use GuzzleHttp\Cookie\FileCookieJar;
+use Illuminate\Support\Facades\Redis;
+
+class BJS
+{
+
+    public $client;
+    public $clientXML;
+    public $loginState = 'false';
+    public $isValidSession = false;
+
+    public function __construct()
+    {
+        if (+Redis::get('system:bjs:failed-request') >= 3) {
+            Redis::set('system:bjs:login-toggle', 'false');
+        }
+        $this->loginState = Redis::get('system:bjs:login-toggle') === 'true';
+        $this->getBJSSession();
+    }
+
+    private function getCsrfToken($html)
+    {
+        $pattern = '/<meta name="csrf-token" content="(.*?)">/';
+        preg_match($pattern, $html, $matches);
+
+        return $matches[1] ?? null;
+    }
+
+    private function isValidSession()
+    {
+        $testSession = $this->client->request('GET', '/admin/account');
+        $isLoginPage = str_contains((string) $testSession->getBody(), 'SignInForm');
+        $hasCurrentPassword = str_contains((string) $testSession->getBody(), 'current_password');
+
+        return !$isLoginPage && $hasCurrentPassword;
+    }
+
+    private function getBJSSession()
+    {
+        $cookie = new FileCookieJar(storage_path('app/bjs-cookies.json'), true);
+
+        $this->client = new Client([
+            'cookies' => $cookie,
+            'base_uri' => 'https://belanjasosmed.com',
+        ]);
+
+        $this->clientXML = new Client([
+            'cookies' => $cookie,
+            'base_uri' => 'https://belanjasosmed.com',
+            'headers' => [
+                'X-Requested-With' => 'XMLHttpRequest',
+                'Referer' => 'https://belanjasosmed.com/admin/orders?status=0&service=11',
+                'Origin' => 'https://belanjasosmed.com',
+            ],
+        ]);
+
+        if (!$this->loginState) {
+            return;
+        }
+
+        $this->isValidSession = $this->isValidSession();
+        if (!$this->isValidSession) {
+            $response = $this->client->request('GET', '/admin');
+            $html = (string) $response->getBody();
+            $csrfToken = $this->getCsrfToken($html);
+
+            if ($csrfToken) {
+                $this->client->request('POST', '/admin', [
+                    'form_params' => [
+                        '_csrf_admin' => $csrfToken,
+                        "SignInForm[login]" => "indofoll",
+                        "SignInForm[password]" => "selfie01macos49",
+                        'SignInForm[remember]' => 1,
+                    ],
+                ]);
+                $this->isValidSession = $this->isValidSession();
+                Redis::set("system:bjs:failed-request", 0);
+            }
+        }
+    }
+
+    public function getData($request)
+    {
+        return json_decode($request->getBody(), false);
+    }
+
+    public function getIGUsername($input)
+    {
+        $input = str_replace('@', '', $input);
+        if (!filter_var($input, FILTER_VALIDATE_URL)) {
+            return $input;
+        }
+
+        $path = parse_url($input, PHP_URL_PATH);
+        $pathParts = explode('/', trim($path, '/'));
+
+        return $pathParts[0];
+    }
+
+    /////////////////////////
+    // BJS Request
+    /////////////////////////
+    public function getOrders($serviceId, $status, $pageSize =  100)
+    {
+        try {
+            return $this->clientXML->get("/admin/api/orders/list?status=$status&service=$serviceId&page_size=$pageSize");
+        } catch (\Throwable $th) {
+            system_log("Failed get orders $serviceId $status : " . $th->getMessage(), "BJS");
+            Redis::incr("system:bjs:failed-request");
+            $this->getBJSSession();
+            return false;
+        }
+    }
+
+    public function getOrdersData($serviceId, $status, $pageSize =  100)
+    {
+        if (!$this->loginState) {
+            return [];
+        }
+        try {
+            $request = $this->clientXML->get("/admin/api/orders/list?status=$status&service=$serviceId&page_size=$pageSize");
+            return $this->getData($request)->data->orders;
+        } catch (\Throwable $th) {
+            system_log("Failed get orders $serviceId $status : " . $th->getMessage(), "BJS");
+            Redis::incr("system:bjs:failed-request");
+            $this->getBJSSession();
+            return [];
+        }
+    }
+
+
+    public function setStartCount($id, $start)
+    {
+        if (!$this->loginState) {
+            return false;
+        }
+        try {
+            return $this->clientXML->post('/admin/api/orders/set-start-count/' . $id, [
+                'form_params' => [
+                    "start_count" => $start
+                ]
+            ]);
+        } catch (\Throwable $th) {
+            system_log("Failed set start count $id to $start : " . $th->getMessage(), "BJS");
+            Redis::incr("system:bjs:failed-request");
+            $this->getBJSSession();
+            return false;
+        }
+    }
+
+    public function setPartial($id, $remains)
+    {
+        if (!$this->loginState) {
+            return false;
+        }
+        try {
+            return $this->clientXML->post('/admin/api/orders/set-partial/' . $id, [
+                'form_params' => [
+                    "remains" => $remains
+                ]
+            ]);
+        } catch (\Throwable $th) {
+            system_log("Failed set partial $id to $remains : " . $th->getMessage(), "BJS");
+            Redis::incr("system:bjs:failed-request");
+            $this->getBJSSession();
+            return false;
+        }
+    }
+
+    public function cancelOrder($id)
+    {
+        if (!$this->loginState) {
+            return false;
+        }
+        try {
+            return $this->clientXML->post('/admin/api/orders/cancel/' . $id);
+        } catch (\Throwable $th) {
+            system_log("Failed cancel order $id : " . $th->getMessage(), "BJS");
+            Redis::incr("system:bjs:failed-request");
+            $this->getBJSSession();
+            return false;
+        }
+    }
+
+    public function changeStatus($id, $status)
+    {
+        if (!$this->loginState) {
+            return false;
+        }
+        try {
+            return $this->clientXML->post('/admin/api/orders/change-status/' . $id, [
+                'form_params' => [
+                    "status" => $status
+                ]
+            ]);
+        } catch (\Throwable $th) {
+            system_log("Failed change status $id to $status : " . $th->getMessage(), "BJS");
+            Redis::incr("system:bjs:failed-request");
+            $this->getBJSSession();
+            return false;
+        }
+    }
+
+    public function isAllowedLogin()
+    {
+        return $this->loginState === 'true';
+    }
+
+
+    const PENDING = 0;
+    const INPROGRESS = 1;
+    const COMPLETED = 2;
+    const PARTIAL = 3;
+    const CANCELED = 4;
+    const PROCESSING = 5;
+    const FAIL = 6;
+    const ERROR = 7;
+
+    const TO_STRING = [
+        self::PENDING => 'pending',
+        self::INPROGRESS => 'inprogress',
+        self::COMPLETED => 'completed',
+        self::PARTIAL => 'partial',
+        self::CANCELED => 'canceled',
+        self::PROCESSING => 'processing',
+        self::FAIL => 'fail',
+        self::ERROR => 'error',
+    ];
+
+    const TO_CODE = [
+        'pending' => self::PENDING,
+        'inprogress' => self::INPROGRESS,
+        'completed' => self::COMPLETED,
+        'partial' => self::PARTIAL,
+        'canceled' => self::CANCELED,
+        'processing' => self::PROCESSING,
+        'fail' => self::FAIL,
+        'error' => self::ERROR,
+    ];
+}
