@@ -31,6 +31,8 @@ class BJS
 
     private string $cookiePath;
 
+    private string $servicesKey;
+
     private string $baseUri;
 
     private string $usernameKey;
@@ -72,11 +74,13 @@ class BJS
             'session' => [
                 'login_toggle' => 'bjs.session.login_toggle',
             ],
+            'services' => 'bjs.services',
         ]);
 
         $this->usernameKey = $keys['credentials']['username'];
         $this->passwordKey = $keys['credentials']['password'];
         $this->loginToggleKey = $keys['session']['login_toggle'];
+        $this->servicesKey = $keys['services'];
 
         $this->initializeHttpClients($client, $clientXML);
         $this->checkLoginState();
@@ -372,5 +376,17 @@ class BJS
         $pathParts = explode('/', trim($path, '/'));
 
         return $pathParts[0];
+    }
+
+    public function getServices(): array
+    {
+        return $this->cache->get($this->servicesKey, []);
+    }
+
+    public function getServiceId(int $index): ?int
+    {
+        $services = $this->getServices();
+
+        return $services[$index] ?? null;
     }
 }

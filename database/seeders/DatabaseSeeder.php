@@ -29,5 +29,6 @@ class DatabaseSeeder extends Seeder
         }
 
         $this->call(BJSCredentialsSeeder::class);
+        $this->call(BJSServicesSeeder::class);
     }
 }

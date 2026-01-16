@@ -15,10 +15,41 @@ class BJSGetOrders extends Command
 
     public function handle(): int
     {
-        $serviceId = $this->option('service') ?? $this->ask('Service ID', '162');
-        $status = $this->option('status') ?? 0;
+        $serviceId = $this->option('service');
+
+        if ($serviceId === null) {
+            $bjs = new BJS;
+            $services = $bjs->getServices();
+
+            if (empty($services)) {
+                $this->error('No services configured. Please add service IDs in settings.');
+
+                return Command::FAILURE;
+            }
+
+            $this->info('Available services:');
+            foreach ($services as $index => $id) {
+                $this->line(($index + 1).". Service ID: $id");
+            }
+
+            $selection = $this->ask('Select service number (1-'.count($services).')', '1');
+            $index = (int) $selection - 1;
+
+            $serviceId = $bjs->getServiceId($index);
+
+            if ($serviceId === null) {
+                $this->error('Invalid selection.');
+
+                return Command::FAILURE;
+            }
+        } else {
+            $serviceId = (int) $serviceId;
+        }
 
         $bjs = new BJS;
+
+        $status = $this->option('status') ?? 0;
+
         $orders = $bjs->getOrdersData((int) $serviceId, (int) $status);
 
         $state = $bjs->getLastAuthState();

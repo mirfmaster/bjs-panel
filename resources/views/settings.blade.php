@@ -76,6 +76,25 @@
                                 <p class="mt-2 text-sm text-red-600">{{ $message }}</p>
                             @enderror
                         </div>
+
+                        <div>
+                            <label for="services" class="block text-sm font-medium text-gray-700">
+                                Service IDs
+                            </label>
+                            <div class="mt-1">
+                                <textarea name="services" id="services" rows="10"
+                                    class="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md">{{ old('services', $settings['services']) }}</textarea>
+                            </div>
+                            <p class="mt-1 text-sm text-gray-500">
+                                Enter service IDs (one per line). Example:<br>
+                                195<br>
+                                190<br>
+                                91
+                            </p>
+                            @error('services')
+                                <p class="mt-2 text-sm text-red-600">{{ $message }}</p>
+                            @enderror
+                        </div>
                     </div>
                 </div>
                 <div class="px-4 py-3 bg-gray-50 text-right sm:px-6">

@@ -76,6 +76,9 @@ class SettingsControllerTest extends TestCase
         \Illuminate\Support\Facades\Cache::shouldReceive('get')
             ->with('bjs.session.login_toggle', false)
             ->andReturn(true);
+        \Illuminate\Support\Facades\Cache::shouldReceive('get')
+            ->with('bjs.services', null)
+            ->andReturn([195, 190, 91]);
 
         $controller = new SettingsController();
         $view = $controller->index();
@@ -100,6 +103,9 @@ class SettingsControllerTest extends TestCase
         \Illuminate\Support\Facades\Cache::shouldReceive('get')
             ->with('bjs.session.login_toggle', false)
             ->andReturn(false);
+        \Illuminate\Support\Facades\Cache::shouldReceive('get')
+            ->with('bjs.services', null)
+            ->andReturn([]);
 
         $controller = new SettingsController();
         $view = $controller->index();

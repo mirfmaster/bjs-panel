@@ -15,5 +15,6 @@ return [
         'session' => [
             'login_toggle' => 'bjs.session.login_toggle',
         ],
+        'services' => 'bjs.services',
     ],
 ];
