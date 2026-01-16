@@ -25,7 +25,7 @@ class BJSGetOrders extends Command
             BJS::AUTH_STATE_VALID => '<info>Using existing session</info>',
             BJS::AUTH_STATE_REAUTHENTICATED => '<comment>Session renewed - re-authenticated</comment>',
             BJS::AUTH_STATE_FAILED => '<error>Session authentication failed</error>',
-            BJS::AUTH_STATE_DISABLED => '<comment>Session is disabled</comment>',
+            BJS::AUTH_STATE_DISABLED => '<comment>Login toggle is false - session disabled</comment>',
         ];
 
         $this->line($stateMessages[$state] ?? 'Unknown state');
