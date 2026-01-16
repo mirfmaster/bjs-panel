@@ -11,6 +11,7 @@ use Illuminate\Foundation\Testing\TestCase;
 class BJSServiceTest extends TestCase
 {
     private array $cacheData = [];
+
     private array $config = [];
 
     protected function setUp(): void
@@ -20,11 +21,11 @@ class BJSServiceTest extends TestCase
             'bjs.credentials.username' => 'testuser',
             'bjs.credentials.password' => 'testpass',
             'bjs.session.login_toggle' => false,
-            'bjs.session.failed_attempts' => 0,
         ];
 
         $this->config = [
-            'max_failed_attempts' => 3,
+            'max_retries' => 3,
+            'retry_delay_ms' => 5000,
             'cache_keys' => [
                 'credentials' => [
                     'username' => 'bjs.credentials.username',
@@ -32,7 +33,6 @@ class BJSServiceTest extends TestCase
                 ],
                 'session' => [
                     'login_toggle' => 'bjs.session.login_toggle',
-                    'failed_attempts' => 'bjs.session.failed_attempts',
                 ],
             ],
         ];
@@ -260,5 +260,53 @@ class BJSServiceTest extends TestCase
         $this->assertEquals('reauthenticated', BJS::AUTH_STATE_REAUTHENTICATED);
         $this->assertEquals('failed', BJS::AUTH_STATE_FAILED);
         $this->assertEquals('disabled', BJS::AUTH_STATE_DISABLED);
+    }
+
+    public function test_retry_config_defaults(): void
+    {
+        $this->config['max_retries'] = null;
+        $this->config['retry_delay_ms'] = null;
+
+        $bjs = new BJS(
+            $this->createMockCache(),
+            null,
+            null,
+            '/tmp/bjs-cookies.json',
+            'https://belanjasosmed.com',
+            $this->config
+        );
+
+        $reflection = new \ReflectionClass($bjs);
+        $maxRetries = $reflection->getProperty('maxRetries');
+        $retryDelayMs = $reflection->getProperty('retryDelayMs');
+        $maxRetries->setAccessible(true);
+        $retryDelayMs->setAccessible(true);
+
+        $this->assertEquals(3, $maxRetries->getValue($bjs));
+        $this->assertEquals(5000, $retryDelayMs->getValue($bjs));
+    }
+
+    public function test_retry_config_custom(): void
+    {
+        $this->config['max_retries'] = 5;
+        $this->config['retry_delay_ms'] = 2000;
+
+        $bjs = new BJS(
+            $this->createMockCache(),
+            null,
+            null,
+            '/tmp/bjs-cookies.json',
+            'https://belanjasosmed.com',
+            $this->config
+        );
+
+        $reflection = new \ReflectionClass($bjs);
+        $maxRetries = $reflection->getProperty('maxRetries');
+        $retryDelayMs = $reflection->getProperty('retryDelayMs');
+        $maxRetries->setAccessible(true);
+        $retryDelayMs->setAccessible(true);
+
+        $this->assertEquals(5, $maxRetries->getValue($bjs));
+        $this->assertEquals(2000, $retryDelayMs->getValue($bjs));
     }
 }

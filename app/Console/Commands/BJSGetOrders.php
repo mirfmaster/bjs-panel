@@ -10,6 +10,7 @@ use Symfony\Component\Console\Helper\Table;
 class BJSGetOrders extends Command
 {
     protected $signature = 'bjs:get-orders {--service= : Service ID} {--status= : Order status (0-7)}';
+
     protected $description = 'Fetch and display orders from BJS';
 
     public function handle(): int
@@ -17,7 +18,7 @@ class BJSGetOrders extends Command
         $serviceId = $this->option('service') ?? $this->ask('Service ID', '162');
         $status = $this->option('status') ?? 0;
 
-        $bjs = new BJS();
+        $bjs = new BJS;
         $orders = $bjs->getOrdersData((int) $serviceId, (int) $status);
 
         $state = $bjs->getLastAuthState();
@@ -33,6 +34,7 @@ class BJSGetOrders extends Command
 
         if (empty($orders)) {
             $this->info('No orders found.');
+
             return Command::SUCCESS;
         }
 
@@ -54,7 +56,7 @@ class BJSGetOrders extends Command
         $table->render();
 
         $statusLabel = OrderStatus::from($status)->label();
-        $this->info("Found " . count($rows) . " {$statusLabel} orders for service {$serviceId}");
+        $this->info('Found '.count($rows)." {$statusLabel} orders for service {$serviceId}");
 
         return Command::SUCCESS;
     }
@@ -64,14 +66,14 @@ class BJSGetOrders extends Command
         $input = $order->link ?? $order->username ?? '';
         $input = str_replace('@', '', $input);
 
-        if (!filter_var($input, FILTER_VALIDATE_URL)) {
-            return '@' . $input;
+        if (! filter_var($input, FILTER_VALIDATE_URL)) {
+            return '@'.$input;
         }
 
         $path = parse_url($input, PHP_URL_PATH);
         $pathParts = explode('/', trim($path, '/'));
 
-        return '@' . ($pathParts[0] ?? $input);
+        return '@'.($pathParts[0] ?? $input);
     }
 
     private function getStatusLabel($order): string

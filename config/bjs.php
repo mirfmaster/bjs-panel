@@ -5,7 +5,8 @@ return [
     'password' => env('BJS_PASSWORD'),
     'base_uri' => env('BJS_BASE_URI', 'https://belanjasosmed.com'),
     'cookie_path' => storage_path('app/bjs-cookies.json'),
-    'max_failed_attempts' => (int) env('BJS_MAX_FAILED_ATTEMPTS', 3),
+    'max_retries' => (int) env('BJS_MAX_RETRIES', 3),
+    'retry_delay_ms' => (int) env('BJS_RETRY_DELAY_MS', 5000),
     'cache_keys' => [
         'credentials' => [
             'username' => 'bjs.credentials.username',
@@ -13,7 +14,6 @@ return [
         ],
         'session' => [
             'login_toggle' => 'bjs.session.login_toggle',
-            'failed_attempts' => 'bjs.session.failed_attempts',
         ],
     ],
 ];

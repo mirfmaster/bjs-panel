@@ -7,9 +7,10 @@ use Exception;
 class BJSException extends Exception
 {
     public const CODE_SESSION_INVALID = 1001;
+
     public const CODE_AUTH_FAILED = 1002;
+
     public const CODE_API_ERROR = 1003;
-    public const CODE_SESSION_LOCKED = 1004;
 
     public static function sessionInvalid(string $message = 'Session is invalid'): self
     {
@@ -24,10 +25,5 @@ class BJSException extends Exception
     public static function apiError(string $message, int $code = 0): self
     {
         return new self($message, self::CODE_API_ERROR + $code);
-    }
-
-    public static function sessionLocked(string $message = 'Session is locked due to too many failed attempts'): self
-    {
-        return new self($message, self::CODE_SESSION_LOCKED);
     }
 }

@@ -15,7 +15,7 @@ enum OrderStatus: int
 
     public function label(): string
     {
-        return match($this) {
+        return match ($this) {
             self::PENDING => 'pending',
             self::INPROGRESS => 'inprogress',
             self::COMPLETED => 'completed',
@@ -29,7 +29,7 @@ enum OrderStatus: int
 
     public static function fromLabel(string $label): self
     {
-        return match($label) {
+        return match ($label) {
             'pending' => self::PENDING,
             'inprogress' => self::INPROGRESS,
             'completed' => self::COMPLETED,
