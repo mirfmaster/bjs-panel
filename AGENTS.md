@@ -12,6 +12,14 @@ bd close <id>         # Complete work
 bd sync               # Sync with git
 ```
 
+## Standards (MANDATORY READ)
+
+### Code Standards
+**Reference:** `docs/standards/code.md`
+
+### Test Standards
+**Reference:** `docs/standards/test.md`
+
 ## Landing the Plane (Session Completion)
 
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
