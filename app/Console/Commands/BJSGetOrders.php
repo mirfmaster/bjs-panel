@@ -29,10 +29,10 @@ class BJSGetOrders extends Command
 
             $this->info('Available services:');
             foreach ($services as $index => $id) {
-                $this->line(($index + 1).". Service ID: $id");
+                $this->line(($index + 1) . ". Service ID: $id");
             }
 
-            $selection = $this->ask('Select service number (1-'.count($services).')', '1');
+            $selection = $this->ask('Select service number (1-' . count($services) . ')', '1');
             $index = (int) $selection - 1;
 
             $serviceId = $bjs->getServiceId($index);
@@ -64,7 +64,7 @@ class BJSGetOrders extends Command
         $this->newLine();
 
         if (empty($orders)) {
-            $this->info('No orders found.');
+            $this->info("No orders $serviceId found.");
 
             return Command::SUCCESS;
         }
@@ -87,7 +87,7 @@ class BJSGetOrders extends Command
         $table->render();
 
         $statusLabel = OrderStatus::from($status)->label();
-        $this->info('Found '.count($rows)." {$statusLabel} orders for service {$serviceId}");
+        $this->info('Found ' . count($rows) . " {$statusLabel} orders for service {$serviceId}");
 
         return Command::SUCCESS;
     }
@@ -98,13 +98,13 @@ class BJSGetOrders extends Command
         $input = str_replace('@', '', $input);
 
         if (! filter_var($input, FILTER_VALIDATE_URL)) {
-            return '@'.$input;
+            return '@' . $input;
         }
 
         $path = parse_url($input, PHP_URL_PATH);
         $pathParts = explode('/', trim($path, '/'));
 
-        return '@'.($pathParts[0] ?? $input);
+        return '@' . ($pathParts[0] ?? $input);
     }
 
     private function getStatusLabel($order): string
