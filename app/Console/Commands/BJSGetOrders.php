@@ -3,6 +3,10 @@
 namespace App\Console\Commands;
 
 use App\Enums\OrderStatus;
+use App\Exceptions\BJSAuthException;
+use App\Exceptions\BJSSessionException;
+use App\Exceptions\BJSException;
+use App\Exceptions\BJSNetworkException;
 use App\Services\BJS;
 use Illuminate\Console\Command;
 use Symfony\Component\Console\Helper\Table;
@@ -18,7 +22,7 @@ class BJSGetOrders extends Command
         $serviceId = $this->option('service');
 
         if ($serviceId === null) {
-            $bjs = new BJS;
+            $bjs = app(BJS::class);
             $services = $bjs->getServices();
 
             if (empty($services)) {
@@ -46,50 +50,76 @@ class BJSGetOrders extends Command
             $serviceId = (int) $serviceId;
         }
 
-        $bjs = new BJS;
-
+        $bjs = app(BJS::class);
         $status = $this->option('status') ?? 0;
 
-        $orders = $bjs->getOrdersData((int) $serviceId, (int) $status);
+        try {
+            $orders = $bjs->getOrdersData((int) $serviceId, (int) $status);
 
-        $state = $bjs->getLastAuthState();
-        $stateMessages = [
-            BJS::AUTH_STATE_VALID => '<info>Using existing session</info>',
-            BJS::AUTH_STATE_REAUTHENTICATED => '<comment>Session renewed - re-authenticated</comment>',
-            BJS::AUTH_STATE_FAILED => '<error>Session authentication failed</error>',
-            BJS::AUTH_STATE_DISABLED => '<comment>Login toggle is false - session disabled</comment>',
-        ];
+            $state = $bjs->getLastAuthState();
+            $stateMessages = [
+                BJS::AUTH_STATE_VALID => '<info>Using existing session</info>',
+                BJS::AUTH_STATE_REAUTHENTICATED => '<comment>Session renewed - re-authenticated</comment>',
+                BJS::AUTH_STATE_FAILED => '<error>Session authentication failed</error>',
+                BJS::AUTH_STATE_DISABLED => '<comment>Login toggle is false - session disabled</comment>',
+            ];
 
-        $this->line($stateMessages[$state] ?? 'Unknown state');
-        $this->newLine();
+            $this->line($stateMessages[$state] ?? 'Unknown state');
+            $this->newLine();
 
-        if (empty($orders)) {
-            $this->info("No orders $serviceId found.");
+            if (empty($orders)) {
+                $this->info("No orders for service {$serviceId} found.");
+
+                return Command::SUCCESS;
+            }
+
+            $rows = [];
+            foreach ($orders as $order) {
+                $rows[] = [
+                    $order->id,
+                    $this->getIGUsername($order),
+                    $this->getStatusLabel($order),
+                    $order->start_count ?? '-',
+                    $order->remains ?? '-',
+                    $this->formatDate($order),
+                ];
+            }
+
+            $table = new Table($this->output);
+            $table->setHeaders(['ID', 'Username', 'Status', 'Start', 'Remains', 'Date'])
+                ->setRows($rows);
+            $table->render();
+
+            $statusLabel = OrderStatus::from($status)->label();
+            $this->info('Found ' . count($rows) . " {$statusLabel} orders for service {$serviceId}");
 
             return Command::SUCCESS;
+
+        } catch (BJSSessionException $e) {
+            $this->error("Session expired: {$e->getMessage()}");
+
+            return Command::FAILURE;
+
+        } catch (BJSAuthException $e) {
+            $this->error("Authentication failed: {$e->getMessage()}");
+
+            return Command::FAILURE;
+
+        } catch (BJSNetworkException $e) {
+            $this->error("Network error: {$e->getMessage()}");
+
+            return Command::FAILURE;
+
+        } catch (BJSException $e) {
+            $this->error("BJS error: {$e->getMessage()}");
+
+            return Command::FAILURE;
+
+        } catch (\Throwable $e) {
+            $this->error("Unexpected error: {$e->getMessage()}");
+
+            return Command::FAILURE;
         }
-
-        $rows = [];
-        foreach ($orders as $order) {
-            $rows[] = [
-                $order->id,
-                $this->getIGUsername($order),
-                $this->getStatusLabel($order),
-                $order->start_count ?? '-',
-                $order->remains ?? '-',
-                $this->formatDate($order),
-            ];
-        }
-
-        $table = new Table($this->output);
-        $table->setHeaders(['ID', 'Username', 'Status', 'Start', 'Remains', 'Date'])
-            ->setRows($rows);
-        $table->render();
-
-        $statusLabel = OrderStatus::from($status)->label();
-        $this->info('Found ' . count($rows) . " {$statusLabel} orders for service {$serviceId}");
-
-        return Command::SUCCESS;
     }
 
     private function getIGUsername($order): string

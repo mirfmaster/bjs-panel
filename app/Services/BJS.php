@@ -3,9 +3,13 @@
 namespace App\Services;
 
 use App\Enums\OrderStatus;
+use App\Exceptions\BJSAuthException;
+use App\Exceptions\BJSSessionException;
 use App\Exceptions\BJSException;
+use App\Exceptions\BJSNetworkException;
 use GuzzleHttp\Client;
 use GuzzleHttp\Cookie\FileCookieJar;
+use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\Cache\CacheManager;
 use Psr\Http\Message\ResponseInterface;
 
@@ -19,15 +23,13 @@ class BJS
 
     public const AUTH_STATE_DISABLED = 'disabled';
 
+    private const CACHE_KEY_SESSION_VALID = 'bjs.session.valid_until';
+
     private CacheManager $cache;
 
     private Client $client;
 
     private Client $clientXML;
-
-    private bool $loginState = false;
-
-    private bool $isValidSession = false;
 
     private string $cookiePath;
 
@@ -45,6 +47,8 @@ class BJS
 
     private int $retryDelayMs;
 
+    private int $sessionCacheTtl;
+
     private string $lastAuthState = self::AUTH_STATE_DISABLED;
 
     public function getLastAuthState(): string
@@ -53,20 +57,17 @@ class BJS
     }
 
     public function __construct(
-        ?CacheManager $cache = null,
-        ?Client $client = null,
-        ?Client $clientXML = null,
-        ?string $cookiePath = null,
-        ?string $baseUri = null,
-        ?array $config = null
+        CacheManager $cache,
+        array $config
     ) {
-        $this->cache = $cache ?? app(CacheManager::class);
-        $this->cookiePath = $cookiePath ?? $this->getDefaultCookiePath();
-        $this->baseUri = $baseUri ?? config('bjs.base_uri', 'https://belanjasosmed.com');
-        $this->maxRetries = $config['max_retries'] ?? config('bjs.max_retries', 3);
-        $this->retryDelayMs = $config['retry_delay_ms'] ?? config('bjs.retry_delay_ms', 5000);
+        $this->cache = $cache;
+        $this->cookiePath = $config['cookie_path'] ?? $this->getDefaultCookiePath();
+        $this->baseUri = $config['base_uri'] ?? 'https://belanjasosmed.com';
+        $this->maxRetries = $config['max_retries'] ?? 3;
+        $this->retryDelayMs = $config['retry_delay_ms'] ?? 5000;
+        $this->sessionCacheTtl = $config['session_cache_ttl'] ?? 600;
 
-        $keys = $config['cache_keys'] ?? config('bjs.cache_keys', [
+        $keys = $config['cache_keys'] ?? [
             'credentials' => [
                 'username' => 'bjs.credentials.username',
                 'password' => 'bjs.credentials.password',
@@ -75,82 +76,119 @@ class BJS
                 'login_toggle' => 'bjs.session.login_toggle',
             ],
             'services' => 'bjs.services',
-        ]);
+        ];
 
         $this->usernameKey = $keys['credentials']['username'];
         $this->passwordKey = $keys['credentials']['password'];
         $this->loginToggleKey = $keys['session']['login_toggle'];
         $this->servicesKey = $keys['services'];
 
-        $this->initializeHttpClients($client, $clientXML);
-        $this->checkLoginState();
+        $this->initializeHttpClients();
     }
 
     private function getDefaultCookiePath(): string
     {
-        if (function_exists('storage_path')) {
-            return storage_path('app/bjs-cookies.json');
-        }
-
-        return '/tmp/bjs-cookies.json';
+        return storage_path('app/bjs-cookies.json');
     }
 
-    private function initializeHttpClients(?Client $client, ?Client $clientXML): void
+    private function initializeHttpClients(): void
     {
         $cookie = new FileCookieJar($this->cookiePath, true);
 
-        $this->client = $client ?? new Client([
+        $this->client = new Client([
             'cookies' => $cookie,
             'base_uri' => $this->baseUri,
         ]);
 
-        $this->clientXML = $clientXML ?? new Client([
+        $this->clientXML = new Client([
             'cookies' => $cookie,
             'base_uri' => $this->baseUri,
             'headers' => [
                 'X-Requested-With' => 'XMLHttpRequest',
-                'Referer' => $this->baseUri.'/admin/orders?status=0&service=11',
+                'Referer' => $this->baseUri . '/admin/orders?status=0&service=11',
                 'Origin' => $this->baseUri,
             ],
         ]);
     }
 
-    private function checkLoginState(): void
+    private function isLoginEnabled(): bool
     {
-        $isDev = config('app.debug', false);
-
-        if ($isDev) {
-            $hasCredentials = ! empty($this->cache->get($this->usernameKey))
+        if (config('app.debug', false)) {
+            return ! empty($this->cache->get($this->usernameKey))
                 && ! empty($this->cache->get($this->passwordKey));
-            $this->loginState = $hasCredentials;
-
-            if ($this->loginState) {
-                $this->validateAndRepairSession();
-            }
-
-            return;
         }
 
-        $this->loginState = $this->cache->get($this->loginToggleKey, false) === true;
-
-        if (! $this->loginState) {
-            $this->lastAuthState = self::AUTH_STATE_DISABLED;
-
-            return;
-        }
-
-        $this->validateAndRepairSession();
+        return $this->cache->get($this->loginToggleKey, false) === true;
     }
 
-    private function validateAndRepairSession(): void
+    private function ensureAuthenticated(): void
     {
-        $this->isValidSession = $this->isValidSession();
+        if (! $this->isLoginEnabled()) {
+            $this->lastAuthState = self::AUTH_STATE_DISABLED;
+            throw new BJSAuthException('Login is disabled');
+        }
 
-        if ($this->isValidSession) {
-            $this->lastAuthState = self::AUTH_STATE_VALID;
-        } else {
+        $validUntil = $this->cache->get(self::CACHE_KEY_SESSION_VALID, 0);
+
+        if (time() < $validUntil) {
+            return;
+        }
+
+        if (! $this->validateSession()) {
             $this->reauthenticate();
         }
+
+        $this->cache->put(self::CACHE_KEY_SESSION_VALID, time() + $this->sessionCacheTtl, $this->sessionCacheTtl);
+    }
+
+    private function validateSession(): bool
+    {
+        try {
+            $testSession = $this->client->get('/admin/account');
+            $body = (string) $testSession->getBody();
+
+            return ! str_contains($body, 'SignInForm') && str_contains($body, 'current_password');
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    private function reauthenticate(): void
+    {
+        $username = $this->cache->get($this->usernameKey);
+        $password = $this->cache->get($this->passwordKey);
+
+        if (empty($username) || empty($password)) {
+            $this->lastAuthState = self::AUTH_STATE_FAILED;
+            throw new BJSAuthException('BJS credentials not found in cache');
+        }
+
+        $this->retryWithBackoff(function () use ($username, $password) {
+            $response = $this->client->get('/admin');
+            $html = (string) $response->getBody();
+            $csrfToken = $this->getCsrfToken($html);
+
+            if (! $csrfToken) {
+                $this->lastAuthState = self::AUTH_STATE_FAILED;
+                throw new BJSAuthException('CSRF token not found');
+            }
+
+            $this->client->post('/admin', [
+                'form_params' => [
+                    '_csrf_admin' => $csrfToken,
+                    'SignInForm[login]' => $username,
+                    'SignInForm[password]' => $password,
+                    'SignInForm[remember]' => 1,
+                ],
+            ]);
+
+            if (! $this->validateSession()) {
+                $this->lastAuthState = self::AUTH_STATE_FAILED;
+                throw new BJSSessionException('Re-authentication failed');
+            }
+
+            $this->lastAuthState = self::AUTH_STATE_REAUTHENTICATED;
+        });
     }
 
     private function retryWithBackoff(callable $operation): void
@@ -174,44 +212,36 @@ class BJS
         throw $lastException;
     }
 
-    private function reauthenticate(): void
+    private function executeWithAuthRetry(callable $operation): mixed
     {
-        $this->retryWithBackoff(function () {
-            $username = $this->cache->get($this->usernameKey);
-            $password = $this->cache->get($this->passwordKey);
+        try {
+            return $operation();
+        } catch (BJSNetworkException $e) {
+            throw $e;
+        } catch (BJSAuthException | BJSSessionException $e) {
+            $this->clearSessionCache();
+            $this->reauthenticate();
 
-            if (empty($username) || empty($password)) {
-                $this->lastAuthState = self::AUTH_STATE_FAILED;
-                throw BJSException::authFailed('BJS credentials not found in cache');
+            return $operation();
+        } catch (GuzzleException $e) {
+            $response = $e->getResponse();
+
+            if ($response && in_array($response->getStatusCode(), [401, 403])) {
+                $this->clearSessionCache();
+                $this->reauthenticate();
+
+                return $operation();
             }
 
-            $response = $this->client->get('/admin');
-            $html = (string) $response->getBody();
-            $csrfToken = $this->getCsrfToken($html);
+            throw new BJSNetworkException('Network error: ' . $e->getMessage(), $e->getCode(), $e);
+        } catch (\Throwable $e) {
+            throw new BJSException('Request failed: ' . $e->getMessage(), $e->getCode(), $e);
+        }
+    }
 
-            if (! $csrfToken) {
-                $this->lastAuthState = self::AUTH_STATE_FAILED;
-                throw BJSException::authFailed('CSRF token not found');
-            }
-
-            $this->client->post('/admin', [
-                'form_params' => [
-                    '_csrf_admin' => $csrfToken,
-                    'SignInForm[login]' => $username,
-                    'SignInForm[password]' => $password,
-                    'SignInForm[remember]' => 1,
-                ],
-            ]);
-
-            $this->isValidSession = $this->isValidSession();
-
-            if (! $this->isValidSession) {
-                $this->lastAuthState = self::AUTH_STATE_FAILED;
-                throw BJSException::sessionInvalid('Re-authentication failed');
-            }
-
-            $this->lastAuthState = self::AUTH_STATE_REAUTHENTICATED;
-        });
+    private function clearSessionCache(): void
+    {
+        $this->cache->forget(self::CACHE_KEY_SESSION_VALID);
     }
 
     private function getCsrfToken(string $html): ?string
@@ -222,141 +252,81 @@ class BJS
         return $matches[1] ?? null;
     }
 
-    private function isValidSession(): bool
-    {
-        try {
-            $testSession = $this->client->get('/admin/account');
-            $body = (string) $testSession->getBody();
-
-            return ! str_contains($body, 'SignInForm') && str_contains($body, 'current_password');
-        } catch (\Throwable $e) {
-            return false;
-        }
-    }
-
     public function isAuthenticated(): bool
     {
-        return $this->loginState && $this->isValidSession;
+        return $this->isLoginEnabled() && $this->validateSession();
     }
 
-    public function getOrders(int $serviceId, int $status, int $pageSize = 100): ?ResponseInterface
+    public function getOrders(int $serviceId, int $status, int $pageSize = 100): ResponseInterface
     {
-        if (! $this->loginState) {
-            return null;
-        }
+        $this->ensureAuthenticated();
 
-        try {
-            return $this->clientXML->get("/admin/api/orders/list?status=$status&service=$serviceId&page_size=$pageSize");
-        } catch (\Throwable $e) {
-            $this->handleRequestError($e);
-
-            return null;
-        }
+        return $this->executeWithAuthRetry(fn() =>
+            $this->clientXML->get("/admin/api/orders/list?status=$status&service=$serviceId&page_size=$pageSize")
+        );
     }
 
     public function getOrdersData(int $serviceId, int $status, int $pageSize = 100): array
     {
-        if (! $this->loginState) {
-            return [];
-        }
+        $this->ensureAuthenticated();
 
-        try {
-            $request = $this->clientXML->get("/admin/api/orders/list?status=$status&service=$serviceId&page_size=$pageSize");
-            $data = json_decode($request->getBody(), false);
+        $response = $this->executeWithAuthRetry(fn() =>
+            $this->clientXML->get("/admin/api/orders/list?status=$status&service=$serviceId&page_size=$pageSize")
+        );
 
-            return $data->data->orders ?? [];
-        } catch (\Throwable $e) {
-            $this->handleRequestError($e);
+        $data = json_decode($response->getBody(), false);
 
-            return [];
-        }
+        return $data->data->orders ?? [];
     }
 
-    public function setStartCount(int $id, int $start): bool
+    public function setStartCount(int $id, int $start): void
     {
-        if (! $this->loginState) {
-            return false;
-        }
+        $this->ensureAuthenticated();
 
-        try {
-            $this->clientXML->post('/admin/api/orders/set-start-count/'.$id, [
+        $this->executeWithAuthRetry(fn() =>
+            $this->clientXML->post('/admin/api/orders/set-start-count/' . $id, [
                 'form_params' => [
                     'start_count' => $start,
                 ],
-            ]);
-
-            return true;
-        } catch (\Throwable $e) {
-            $this->handleRequestError($e);
-
-            return false;
-        }
+            ])
+        );
     }
 
-    public function setPartial(int $id, int $remains): bool
+    public function setPartial(int $id, int $remains): void
     {
-        if (! $this->loginState) {
-            return false;
-        }
+        $this->ensureAuthenticated();
 
-        try {
-            $this->clientXML->post('/admin/api/orders/set-partial/'.$id, [
+        $this->executeWithAuthRetry(fn() =>
+            $this->clientXML->post('/admin/api/orders/set-partial/' . $id, [
                 'form_params' => [
                     'remains' => $remains,
                 ],
-            ]);
-
-            return true;
-        } catch (\Throwable $e) {
-            $this->handleRequestError($e);
-
-            return false;
-        }
+            ])
+        );
     }
 
-    public function cancelOrder(int $id): bool
+    public function cancelOrder(int $id): void
     {
-        if (! $this->loginState) {
-            return false;
-        }
+        $this->ensureAuthenticated();
 
-        try {
-            $this->clientXML->post('/admin/api/orders/cancel/'.$id);
-
-            return true;
-        } catch (\Throwable $e) {
-            $this->handleRequestError($e);
-
-            return false;
-        }
+        $this->executeWithAuthRetry(fn() =>
+            $this->clientXML->post('/admin/api/orders/cancel/' . $id)
+        );
     }
 
-    public function changeStatus(int $id, OrderStatus|int $status): bool
+    public function changeStatus(int $id, OrderStatus|int $status): void
     {
-        if (! $this->loginState) {
-            return false;
-        }
+        $this->ensureAuthenticated();
 
         $statusValue = $status instanceof OrderStatus ? $status->value : $status;
 
-        try {
-            $this->clientXML->post('/admin/api/orders/change-status/'.$id, [
+        $this->executeWithAuthRetry(fn() =>
+            $this->clientXML->post('/admin/api/orders/change-status/' . $id, [
                 'form_params' => [
                     'status' => $statusValue,
                 ],
-            ]);
-
-            return true;
-        } catch (\Throwable $e) {
-            $this->handleRequestError($e);
-
-            return false;
-        }
-    }
-
-    private function handleRequestError(\Throwable $e): void
-    {
-        logger()->error('BJS Request Error: '.$e->getMessage());
+            ])
+        );
     }
 
     public function getData(ResponseInterface $request): object

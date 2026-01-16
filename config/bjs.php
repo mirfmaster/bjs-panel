@@ -7,6 +7,7 @@ return [
     'cookie_path' => storage_path('app/bjs-cookies.json'),
     'max_retries' => (int) env('BJS_MAX_RETRIES', 3),
     'retry_delay_ms' => (int) env('BJS_RETRY_DELAY_MS', 5000),
+    'session_cache_ttl' => (int) env('BJS_SESSION_CACHE_TTL', 600),
     'cache_keys' => [
         'credentials' => [
             'username' => 'bjs.credentials.username',
