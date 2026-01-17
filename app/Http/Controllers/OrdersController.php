@@ -25,6 +25,8 @@ class OrdersController extends Controller
 
         if ($request->filled('status')) {
             $query->where('status', $request->input('status'));
+        } else {
+            $query->where('status', OrderStatus::PENDING);
         }
 
         if ($request->filled('search')) {
@@ -60,17 +62,7 @@ class OrdersController extends Controller
         return view('orders.show', compact('order', 'services'));
     }
 
-    public function cancel(Order $order, BJS $bjs): RedirectResponse
-    {
-        try {
-            $bjs->cancelOrder($order->id);
-            return redirect()->back()->with('success', 'Order cancelled successfully');
-        } catch (\Throwable $e) {
-            return redirect()->back()->with('error', 'Failed to cancel order: ' . $e->getMessage());
-        }
-    }
-
-    public function setStartCount(Request $request, Order $order, BJS $bjs): RedirectResponse
+    public function startOrder(Request $request, Order $order, BJS $bjs): RedirectResponse
     {
         $validated = $request->validate([
             'start_count' => 'required|integer|min:0',
@@ -78,25 +70,62 @@ class OrdersController extends Controller
 
         try {
             $bjs->setStartCount($order->id, (int) $validated['start_count']);
+
             $order->start_count = (int) $validated['start_count'];
+            $order->status = OrderStatus::INPROGRESS;
+            $order->processed_by = auth()->id();
+            $order->processed_at = now();
             $order->save();
-            return redirect()->back()->with('success', 'Start count updated successfully');
+
+            return redirect()->back()->with('success', 'Order started successfully');
         } catch (\Throwable $e) {
-            return redirect()->back()->with('error', 'Failed to update start count: ' . $e->getMessage());
+            return redirect()->back()->with('error', 'Failed to start order: ' . $e->getMessage());
         }
     }
 
-    public function setPartial(Request $request, Order $order, BJS $bjs): RedirectResponse
+    public function complete(Order $order): RedirectResponse
+    {
+        try {
+            $order->status = OrderStatus::COMPLETED;
+            $order->remains = 0;
+            $order->save();
+
+            return redirect()->back()->with('success', 'Order completed successfully');
+        } catch (\Throwable $e) {
+            return redirect()->back()->with('error', 'Failed to complete order: ' . $e->getMessage());
+        }
+    }
+
+    public function cancel(Request $request, Order $order, BJS $bjs): RedirectResponse
+    {
+        $validated = $request->validate([
+            'reason' => 'nullable|string|max:1000',
+        ]);
+
+        try {
+            $bjs->cancelOrder($order->id);
+
+            $order->status = OrderStatus::CANCELED;
+            $order->order_cancel_reason = $validated['reason'] ?? null;
+            $order->save();
+
+            return redirect()->back()->with('success', 'Order cancelled successfully');
+        } catch (\Throwable $e) {
+            return redirect()->back()->with('error', 'Failed to cancel order: ' . $e->getMessage());
+        }
+    }
+
+    public function partial(Request $request, Order $order): RedirectResponse
     {
         $validated = $request->validate([
             'remains' => 'required|integer|min:0',
         ]);
 
         try {
-            $bjs->setPartial($order->id, (int) $validated['remains']);
-            $order->remains = (int) $validated['remains'];
             $order->status = OrderStatus::PARTIAL;
+            $order->remains = (int) $validated['remains'];
             $order->save();
+
             return redirect()->back()->with('success', 'Order marked as partial successfully');
         } catch (\Throwable $e) {
             return redirect()->back()->with('error', 'Failed to set partial: ' . $e->getMessage());
