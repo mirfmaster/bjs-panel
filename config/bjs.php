@@ -17,5 +17,9 @@ return [
             'login_toggle' => 'bjs.session.login_toggle',
         ],
         'services' => 'bjs.services',
+        'api' => [
+            'access_token' => 'bjs.api.access_token',
+            'refresh_token' => 'bjs.api.refresh_token',
+        ],
     ],
 ];

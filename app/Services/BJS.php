@@ -10,30 +10,15 @@ use App\Exceptions\BJSNetworkException;
 use GuzzleHttp\Client;
 use GuzzleHttp\Cookie\FileCookieJar;
 use GuzzleHttp\Exception\GuzzleException;
+use GuzzleHttp\Exception\RequestException;
 use Illuminate\Cache\CacheManager;
 use Psr\Http\Message\ResponseInterface;
 
 class BJS
 {
-    public const AUTH_STATE_VALID = 'valid';
-
-    public const AUTH_STATE_REAUTHENTICATED = 'reauthenticated';
-
-    public const AUTH_STATE_FAILED = 'failed';
-
-    public const AUTH_STATE_DISABLED = 'disabled';
-
-    private const CACHE_KEY_SESSION_VALID = 'bjs.session.valid_until';
-
     private CacheManager $cache;
 
     private Client $client;
-
-    private Client $clientXML;
-
-    private string $cookiePath;
-
-    private string $servicesKey;
 
     private string $baseUri;
 
@@ -41,239 +26,188 @@ class BJS
 
     private string $passwordKey;
 
+    private string $servicesKey;
+
+    private string $accessTokenKey;
+
+    private string $refreshTokenKey;
+
+    private string $cookiePath;
+
+    private FileCookieJar $cookieJar;
+
     private string $loginToggleKey;
-
-    private int $maxRetries;
-
-    private int $retryDelayMs;
-
-    private int $sessionCacheTtl;
-
-    private string $lastAuthState = self::AUTH_STATE_DISABLED;
-
-    public function getLastAuthState(): string
-    {
-        return $this->lastAuthState;
-    }
 
     public function __construct(
         CacheManager $cache,
         array $config
     ) {
         $this->cache = $cache;
-        $this->cookiePath = $config['cookie_path'] ?? $this->getDefaultCookiePath();
         $this->baseUri = $config['base_uri'] ?? 'https://belanjasosmed.com';
-        $this->maxRetries = $config['max_retries'] ?? 3;
-        $this->retryDelayMs = $config['retry_delay_ms'] ?? 5000;
-        $this->sessionCacheTtl = $config['session_cache_ttl'] ?? 600;
 
-        $keys = $config['cache_keys'] ?? [
-            'credentials' => [
-                'username' => 'bjs.credentials.username',
-                'password' => 'bjs.credentials.password',
-            ],
-            'session' => [
-                'login_toggle' => 'bjs.session.login_toggle',
-            ],
-            'services' => 'bjs.services',
-        ];
+        $keys = $config['cache_keys'] ?? [];
+        $this->usernameKey = $keys['credentials']['username'] ?? 'bjs.credentials.username';
+        $this->passwordKey = $keys['credentials']['password'] ?? 'bjs.credentials.password';
+        $this->servicesKey = $keys['services'] ?? 'bjs.services';
+        $this->accessTokenKey = $keys['api']['access_token'] ?? 'bjs.api.access_token';
+        $this->refreshTokenKey = $keys['api']['refresh_token'] ?? 'bjs.api.refresh_token';
+        $this->loginToggleKey = $keys['session']['login_toggle'] ?? 'bjs.session.login_toggle';
+        $this->cookiePath = $config['cookie_path'] ?? storage_path('app/bjs-cookies.json');
+        $this->cookieJar = new FileCookieJar($this->cookiePath, true);
 
-        $this->usernameKey = $keys['credentials']['username'];
-        $this->passwordKey = $keys['credentials']['password'];
-        $this->loginToggleKey = $keys['session']['login_toggle'];
-        $this->servicesKey = $keys['services'];
-
-        $this->initializeHttpClients();
+        $this->initializeHttpClient();
     }
 
-    private function getDefaultCookiePath(): string
+    private function initializeHttpClient(): void
     {
-        return storage_path('app/bjs-cookies.json');
-    }
-
-    private function initializeHttpClients(): void
-    {
-        $cookie = new FileCookieJar($this->cookiePath, true);
-
         $this->client = new Client([
-            'cookies' => $cookie,
             'base_uri' => $this->baseUri,
-        ]);
-
-        $this->clientXML = new Client([
-            'cookies' => $cookie,
-            'base_uri' => $this->baseUri,
+            'cookies' => $this->cookieJar,
             'headers' => [
+                'Accept' => 'application/json, text/plain, */*',
+                'Content-Type' => 'application/json',
                 'X-Requested-With' => 'XMLHttpRequest',
-                'Referer' => $this->baseUri . '/admin/orders?status=0&service=11',
                 'Origin' => $this->baseUri,
+                'Referer' => $this->baseUri . '/admin/orders?status=0&service=11',
             ],
         ]);
     }
 
-    private function isLoginEnabled(): bool
+    private function getCsrfToken(string $html): ?string
     {
-        if (config('app.debug', false)) {
-            return ! empty($this->cache->get($this->usernameKey))
-                && ! empty($this->cache->get($this->passwordKey));
-        }
-
-        return $this->cache->get($this->loginToggleKey, false) === true;
+        preg_match('/<meta name="csrf-token" content="([^"]+)">/', $html, $matches);
+        return $matches[1] ?? null;
     }
 
-    private function ensureAuthenticated(): void
-    {
-        if (! $this->isLoginEnabled()) {
-            $this->lastAuthState = self::AUTH_STATE_DISABLED;
-            throw new BJSAuthException('Login is disabled');
-        }
-
-        $validUntil = $this->cache->get(self::CACHE_KEY_SESSION_VALID, 0);
-
-        if (time() < $validUntil) {
-            return;
-        }
-
-        if (! $this->validateSession()) {
-            $this->reauthenticate();
-        }
-
-        $this->cache->put(self::CACHE_KEY_SESSION_VALID, time() + $this->sessionCacheTtl, $this->sessionCacheTtl);
-    }
-
-    private function validateSession(): bool
+    private function isSessionValid(): bool
     {
         try {
-            $testSession = $this->client->get('/admin/account');
-            $body = (string) $testSession->getBody();
-
-            return ! str_contains($body, 'SignInForm') && str_contains($body, 'current_password');
-        } catch (\Throwable $e) {
+            $response = $this->client->get('/admin/account');
+            $body = (string) $response->getBody();
+            return !str_contains($body, 'SignInForm') && str_contains($body, 'current_password');
+        } catch (\Throwable) {
             return false;
         }
     }
 
-    private function reauthenticate(): void
+    private function performFormLogin(): void
+    {
+        $loginPage = $this->client->get('/admin');
+        $csrfToken = $this->getCsrfToken((string) $loginPage->getBody());
+
+        if (!$csrfToken) {
+            throw new BJSAuthException('Failed to extract CSRF token from login page');
+        }
+
+        $username = $this->cache->get($this->usernameKey);
+        $password = $this->cache->get($this->passwordKey);
+
+        if (empty($username) || empty($password)) {
+            throw new BJSAuthException('BJS credentials not found in cache');
+        }
+
+        $this->client->post('/admin', [
+            'form_params' => [
+                '_csrf_admin' => $csrfToken,
+                'SignInForm[login]' => $username,
+                'SignInForm[password]' => $password,
+                'SignInForm[remember]' => 1,
+            ],
+        ]);
+
+        if (!$this->isSessionValid()) {
+            throw new BJSAuthException('Form login failed - session not established');
+        }
+    }
+
+    private function getAccessToken(): string
+    {
+        $token = $this->cache->get($this->accessTokenKey);
+
+        if ($token) {
+            return $token;
+        }
+
+        return $this->refreshAccessToken();
+    }
+
+    private function refreshAccessToken(): string
     {
         $username = $this->cache->get($this->usernameKey);
         $password = $this->cache->get($this->passwordKey);
 
         if (empty($username) || empty($password)) {
-            $this->lastAuthState = self::AUTH_STATE_FAILED;
             throw new BJSAuthException('BJS credentials not found in cache');
         }
 
-        $this->retryWithBackoff(function () use ($username, $password) {
-            $response = $this->client->get('/admin');
-            $html = (string) $response->getBody();
-            $csrfToken = $this->getCsrfToken($html);
+        $response = $this->client->post('/admin/api/auth', [
+            'json' => [
+                'login' => $username,
+                'password' => $password,
+                're_captcha' => '',
+            ],
+        ]);
 
-            if (! $csrfToken) {
-                $this->lastAuthState = self::AUTH_STATE_FAILED;
-                throw new BJSAuthException('CSRF token not found');
-            }
+        $data = json_decode($response->getBody(), true);
 
-            $this->client->post('/admin', [
-                'form_params' => [
-                    '_csrf_admin' => $csrfToken,
-                    'SignInForm[login]' => $username,
-                    'SignInForm[password]' => $password,
-                    'SignInForm[remember]' => 1,
-                ],
-            ]);
-
-            if (! $this->validateSession()) {
-                $this->lastAuthState = self::AUTH_STATE_FAILED;
-                throw new BJSSessionException('Re-authentication failed');
-            }
-
-            $this->lastAuthState = self::AUTH_STATE_REAUTHENTICATED;
-        });
-    }
-
-    private function retryWithBackoff(callable $operation): void
-    {
-        $lastException = null;
-
-        for ($attempt = 0; $attempt <= $this->maxRetries; $attempt++) {
-            try {
-                $operation();
-
-                return;
-            } catch (\Throwable $e) {
-                $lastException = $e;
-
-                if ($attempt < $this->maxRetries) {
-                    usleep($this->retryDelayMs * 1000);
-                }
-            }
+        if (! ($data['success'] ?? false)) {
+            $errorMessage = $data['error_message'] ?? 'Unknown error';
+            throw new BJSAuthException('API auth failed: ' . $errorMessage);
         }
 
-        throw $lastException;
+        $this->cache->put($this->accessTokenKey, $data['data']['access_token'], now()->addMinutes(20));
+
+        return $data['data']['access_token'];
     }
 
-    private function executeWithAuthRetry(callable $operation): mixed
+    private function ensureAuthenticated(): void
     {
+        $loginToggle = $this->cache->get($this->loginToggleKey, false);
+
+        if (!$loginToggle) {
+            return;
+        }
+
+        if (!$this->isSessionValid()) {
+            $this->performFormLogin();
+        }
+    }
+
+    private function requestApi(string $method, string $uri, array $options = []): ResponseInterface
+    {
+        $this->ensureAuthenticated();
+
+        $token = $this->getAccessToken();
+
+        $options['headers'] = array_merge($options['headers'] ?? [], [
+            'Authorization' => 'Bearer ' . $token,
+        ]);
+
         try {
-            return $operation();
-        } catch (BJSNetworkException $e) {
-            throw $e;
-        } catch (BJSAuthException | BJSSessionException $e) {
-            $this->clearSessionCache();
-            $this->reauthenticate();
-
-            return $operation();
+            return $this->client->$method($uri, $options);
         } catch (GuzzleException $e) {
-            $response = $e->getResponse();
+            if ($e instanceof RequestException && $e->getResponse() && $e->getResponse()->getStatusCode() === 401) {
+                $this->cache->forget($this->accessTokenKey);
+                $this->performFormLogin();
+                $token = $this->refreshAccessToken();
 
-            if ($response && in_array($response->getStatusCode(), [401, 403])) {
-                $this->clearSessionCache();
-                $this->reauthenticate();
+                $options['headers']['Authorization'] = 'Bearer ' . $token;
 
-                return $operation();
+                return $this->client->$method($uri, $options);
             }
 
-            throw new BJSNetworkException('Network error: ' . $e->getMessage(), $e->getCode(), $e);
-        } catch (\Throwable $e) {
-            throw new BJSException('Request failed: ' . $e->getMessage(), $e->getCode(), $e);
+            throw new BJSNetworkException('API request failed: ' . $e->getMessage(), $e->getCode(), $e);
         }
-    }
-
-    private function clearSessionCache(): void
-    {
-        $this->cache->forget(self::CACHE_KEY_SESSION_VALID);
-    }
-
-    private function getCsrfToken(string $html): ?string
-    {
-        $pattern = '/<meta name="csrf-token" content="(.*?)">/';
-        preg_match($pattern, $html, $matches);
-
-        return $matches[1] ?? null;
-    }
-
-    public function isAuthenticated(): bool
-    {
-        return $this->isLoginEnabled() && $this->validateSession();
     }
 
     public function getOrders(int $serviceId, int $status, int $pageSize = 100): ResponseInterface
     {
-        $this->ensureAuthenticated();
-
-        return $this->executeWithAuthRetry(fn() =>
-            $this->clientXML->get("/admin/api/orders/list?status=$status&service=$serviceId&page_size=$pageSize")
-        );
+        return $this->requestApi('get', "/admin/api/orders/list?status=$status&service=$serviceId&page_size=$pageSize");
     }
 
     public function getOrdersData(int $serviceId, int $status, int $pageSize = 100): array
     {
-        $this->ensureAuthenticated();
-
-        $response = $this->executeWithAuthRetry(fn() =>
-            $this->clientXML->get("/admin/api/orders/list?status=$status&service=$serviceId&page_size=$pageSize")
-        );
-
+        $response = $this->requestApi('get', "/admin/api/orders/list?status=$status&service=$serviceId&page_size=$pageSize");
         $data = json_decode($response->getBody(), false);
 
         return $data->data->orders ?? [];
@@ -281,52 +215,30 @@ class BJS
 
     public function setStartCount(int $id, int $start): void
     {
-        $this->ensureAuthenticated();
-
-        $this->executeWithAuthRetry(fn() =>
-            $this->clientXML->post('/admin/api/orders/set-start-count/' . $id, [
-                'form_params' => [
-                    'start_count' => $start,
-                ],
-            ])
-        );
+        $this->requestApi('post', '/admin/api/orders/set-start-count/' . $id, [
+            'json' => ['start_count' => $start],
+        ]);
     }
 
     public function setPartial(int $id, int $remains): void
     {
-        $this->ensureAuthenticated();
-
-        $this->executeWithAuthRetry(fn() =>
-            $this->clientXML->post('/admin/api/orders/set-partial/' . $id, [
-                'form_params' => [
-                    'remains' => $remains,
-                ],
-            ])
-        );
+        $this->requestApi('post', '/admin/api/orders/set-partial/' . $id, [
+            'json' => ['remains' => $remains],
+        ]);
     }
 
     public function cancelOrder(int $id): void
     {
-        $this->ensureAuthenticated();
-
-        $this->executeWithAuthRetry(fn() =>
-            $this->clientXML->post('/admin/api/orders/cancel/' . $id)
-        );
+        $this->requestApi('post', '/admin/api/orders/cancel/' . $id);
     }
 
     public function changeStatus(int $id, OrderStatus|int $status): void
     {
-        $this->ensureAuthenticated();
-
         $statusValue = $status instanceof OrderStatus ? $status->value : $status;
 
-        $this->executeWithAuthRetry(fn() =>
-            $this->clientXML->post('/admin/api/orders/change-status/' . $id, [
-                'form_params' => [
-                    'status' => $statusValue,
-                ],
-            ])
-        );
+        $this->requestApi('post', '/admin/api/orders/change-status/' . $id, [
+            'json' => ['status' => $statusValue],
+        ]);
     }
 
     public function getData(ResponseInterface $request): object

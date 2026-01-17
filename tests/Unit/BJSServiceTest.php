@@ -4,7 +4,6 @@ namespace Tests\Unit;
 
 use App\Enums\OrderStatus;
 use App\Exceptions\BJSAuthException;
-use App\Exceptions\BJSSessionException;
 use App\Exceptions\BJSNetworkException;
 use App\Exceptions\BJSException;
 use App\Services\BJS;
@@ -23,24 +22,20 @@ class BJSServiceTest extends TestCase
         $this->cacheData = [
             'bjs.credentials.username' => 'testuser',
             'bjs.credentials.password' => 'testpass',
-            'bjs.session.login_toggle' => false,
         ];
 
         $this->config = [
-            'max_retries' => 3,
-            'retry_delay_ms' => 100,
-            'session_cache_ttl' => 600,
-            'cookie_path' => '/tmp/bjs-cookies.json',
             'base_uri' => 'https://belanjasosmed.com',
             'cache_keys' => [
                 'credentials' => [
                     'username' => 'bjs.credentials.username',
                     'password' => 'bjs.credentials.password',
                 ],
-                'session' => [
-                    'login_toggle' => 'bjs.session.login_toggle',
-                ],
                 'services' => 'bjs.services',
+                'api' => [
+                    'access_token' => 'bjs.api.access_token',
+                    'refresh_token' => 'bjs.api.refresh_token',
+                ],
             ],
         ];
     }
@@ -144,60 +139,6 @@ class BJSServiceTest extends TestCase
         $this->assertEquals(7, OrderStatus::ERROR->value);
     }
 
-    public function test_get_orders_throws_auth_exception_when_login_disabled(): void
-    {
-        $this->app->config['app.debug'] = false;
-
-        $this->expectException(BJSAuthException::class);
-        $bjs = $this->createBJS();
-        $bjs->getOrders(1, 0);
-    }
-
-    public function test_get_orders_data_throws_auth_exception_when_login_disabled(): void
-    {
-        $this->app->config['app.debug'] = false;
-
-        $this->expectException(BJSAuthException::class);
-        $bjs = $this->createBJS();
-        $bjs->getOrdersData(1, 0);
-    }
-
-    public function test_set_start_count_throws_auth_exception_when_login_disabled(): void
-    {
-        $this->app->config['app.debug'] = false;
-
-        $this->expectException(BJSAuthException::class);
-        $bjs = $this->createBJS();
-        $bjs->setStartCount(123, 100);
-    }
-
-    public function test_set_partial_throws_auth_exception_when_login_disabled(): void
-    {
-        $this->app->config['app.debug'] = false;
-
-        $this->expectException(BJSAuthException::class);
-        $bjs = $this->createBJS();
-        $bjs->setPartial(123, 50);
-    }
-
-    public function test_cancel_order_throws_auth_exception_when_login_disabled(): void
-    {
-        $this->app->config['app.debug'] = false;
-
-        $this->expectException(BJSAuthException::class);
-        $bjs = $this->createBJS();
-        $bjs->cancelOrder(123);
-    }
-
-    public function test_change_status_throws_auth_exception_when_login_disabled(): void
-    {
-        $this->app->config['app.debug'] = false;
-
-        $this->expectException(BJSAuthException::class);
-        $bjs = $this->createBJS();
-        $bjs->changeStatus(123, OrderStatus::PENDING);
-    }
-
     public function test_get_ig_username_strips_at_symbol(): void
     {
         $bjs = $this->createBJS();
@@ -220,88 +161,6 @@ class BJSServiceTest extends TestCase
         $result = $bjs->getIGUsername('testuser');
 
         $this->assertEquals('testuser', $result);
-    }
-
-    public function test_auth_state_disabled_in_production_when_login_toggle_is_false(): void
-    {
-        $this->app->config['app.debug'] = false;
-
-        $this->cacheData['bjs.session.login_toggle'] = false;
-
-        $bjs = new BJS($this->createMockCache(), $this->config);
-
-        $this->assertEquals(BJS::AUTH_STATE_DISABLED, $bjs->getLastAuthState());
-    }
-
-    public function test_auth_state_constants_exist(): void
-    {
-        $this->assertEquals('valid', BJS::AUTH_STATE_VALID);
-        $this->assertEquals('reauthenticated', BJS::AUTH_STATE_REAUTHENTICATED);
-        $this->assertEquals('failed', BJS::AUTH_STATE_FAILED);
-        $this->assertEquals('disabled', BJS::AUTH_STATE_DISABLED);
-    }
-
-    public function test_retry_config_defaults(): void
-    {
-        $config = [
-            'max_retries' => null,
-            'retry_delay_ms' => null,
-            'session_cache_ttl' => null,
-            'cookie_path' => '/tmp/bjs-cookies.json',
-            'base_uri' => 'https://belanjasosmed.com',
-            'cache_keys' => $this->config['cache_keys'],
-        ];
-
-        $bjs = new BJS($this->createMockCache(), $config);
-
-        $reflection = new \ReflectionClass($bjs);
-        $maxRetries = $reflection->getProperty('maxRetries');
-        $retryDelayMs = $reflection->getProperty('retryDelayMs');
-        $sessionCacheTtl = $reflection->getProperty('sessionCacheTtl');
-        $maxRetries->setAccessible(true);
-        $retryDelayMs->setAccessible(true);
-        $sessionCacheTtl->setAccessible(true);
-
-        $this->assertEquals(3, $maxRetries->getValue($bjs));
-        $this->assertEquals(5000, $retryDelayMs->getValue($bjs));
-        $this->assertEquals(600, $sessionCacheTtl->getValue($bjs));
-    }
-
-    public function test_retry_config_custom(): void
-    {
-        $config = $this->config;
-        $config['max_retries'] = 5;
-        $config['retry_delay_ms'] = 2000;
-        $config['session_cache_ttl'] = 300;
-
-        $bjs = new BJS($this->createMockCache(), $config);
-
-        $reflection = new \ReflectionClass($bjs);
-        $maxRetries = $reflection->getProperty('maxRetries');
-        $retryDelayMs = $reflection->getProperty('retryDelayMs');
-        $sessionCacheTtl = $reflection->getProperty('sessionCacheTtl');
-        $maxRetries->setAccessible(true);
-        $retryDelayMs->setAccessible(true);
-        $sessionCacheTtl->setAccessible(true);
-
-        $this->assertEquals(5, $maxRetries->getValue($bjs));
-        $this->assertEquals(2000, $retryDelayMs->getValue($bjs));
-        $this->assertEquals(300, $sessionCacheTtl->getValue($bjs));
-    }
-
-    public function test_exception_hierarchy(): void
-    {
-        $authException = new BJSAuthException('Auth failed');
-        $sessionException = new BJSSessionException('Session expired');
-        $networkException = new BJSNetworkException('Network error');
-
-        $this->assertInstanceOf(BJSException::class, $authException);
-        $this->assertInstanceOf(BJSException::class, $sessionException);
-        $this->assertInstanceOf(BJSException::class, $networkException);
-
-        $this->assertEquals(BJSException::AUTH_FAILED, $authException->getCode());
-        $this->assertEquals(BJSException::SESSION_EXPIRED, $sessionException->getCode());
-        $this->assertEquals(BJSException::NETWORK_ERROR, $networkException->getCode());
     }
 
     public function test_get_services_returns_empty_when_not_set(): void
@@ -342,15 +201,62 @@ class BJSServiceTest extends TestCase
         $this->assertEquals(33, $bjs->getServiceId(2));
     }
 
-    public function test_exception_thrown_on_empty_credentials_in_dev(): void
+    public function test_exception_hierarchy(): void
     {
-        $this->app->config['app.debug'] = true;
-        $this->cacheData['bjs.credentials.username'] = '';
-        $this->cacheData['bjs.credentials.password'] = '';
+        $authException = new BJSAuthException('Auth failed');
+        $networkException = new BJSNetworkException('Network error');
 
-        $bjs = new BJS($this->createMockCache(), $this->config);
+        $this->assertInstanceOf(BJSException::class, $authException);
+        $this->assertInstanceOf(BJSException::class, $networkException);
 
-        $this->expectException(BJSAuthException::class);
-        $bjs->getOrders(1, 0);
+        $this->assertEquals(BJSException::AUTH_FAILED, $authException->getCode());
+        $this->assertEquals(BJSException::NETWORK_ERROR, $networkException->getCode());
+    }
+
+    public function test_config_defaults(): void
+    {
+        $config = [
+            'cache_keys' => [
+                'credentials' => [
+                    'username' => 'test_user',
+                    'password' => 'test_pass',
+                ],
+                'services' => 'test_services',
+                'api' => [
+                    'access_token' => 'test_token',
+                    'refresh_token' => 'test_refresh',
+                ],
+            ],
+        ];
+
+        $bjs = new BJS($this->createMockCache(), $config);
+
+        $reflection = new \ReflectionClass($bjs);
+        $baseUri = $reflection->getProperty('baseUri');
+        $baseUri->setAccessible(true);
+
+        $this->assertEquals('https://belanjasosmed.com', $baseUri->getValue($bjs));
+    }
+
+    public function test_ensure_authenticated_skips_when_login_toggle_false(): void
+    {
+        $this->cacheData['bjs.session.login_toggle'] = false;
+        $bjs = $this->createBJS();
+
+        $reflection = new \ReflectionClass($bjs);
+        $method = $reflection->getMethod('ensureAuthenticated');
+        $method->setAccessible(true);
+
+        $method->invoke($bjs);
+        $this->assertTrue(true);
+    }
+
+    public function test_get_data_parses_json_response(): void
+    {
+        $bjs = $this->createBJS();
+        $response = new \GuzzleHttp\Psr7\Response(200, [], '{"data": "test"}');
+        $result = $bjs->getData($response);
+
+        $this->assertEquals('test', $result->data);
     }
 }
