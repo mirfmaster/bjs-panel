@@ -82,7 +82,7 @@
                         @forelse($orders as $order)
                         <tr>
                             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ $order->id }}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">@{{ $order->user }}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ '@' }}{{ $order->user }}</td>
                             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                 @if($order->link)
                                 <a href="{{ $order->link }}" target="_blank" rel="nofollow noreferrer" class="text-indigo-600 hover:text-indigo-900">
