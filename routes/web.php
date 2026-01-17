@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\OrdersController;
 use App\Http\Controllers\SettingsController;
 use Illuminate\Support\Facades\Route;
 
@@ -12,6 +13,14 @@ Route::middleware('auth')->group(function () {
     Route::get('/dashboard', [AuthController::class, 'showDashboard'])->name('dashboard');
     Route::get('/settings', [SettingsController::class, 'index'])->name('settings');
     Route::put('/settings', [SettingsController::class, 'update']);
+
+    Route::get('/orders', [OrdersController::class, 'index'])->name('orders.index');
+    Route::get('/orders/stats', [OrdersController::class, 'stats'])->name('orders.stats');
+    Route::get('/orders/{order}', [OrdersController::class, 'show'])->name('orders.show');
+    Route::post('/orders/{order}/cancel', [OrdersController::class, 'cancel'])->name('orders.cancel');
+    Route::post('/orders/{order}/set-start-count', [OrdersController::class, 'setStartCount'])->name('orders.set-start-count');
+    Route::post('/orders/{order}/set-partial', [OrdersController::class, 'setPartial'])->name('orders.set-partial');
+    Route::post('/orders/{order}/set-remains', [OrdersController::class, 'setRemains'])->name('orders.set-remains');
 });
 
 Route::get('/', fn() => redirect()->route('dashboard'));
