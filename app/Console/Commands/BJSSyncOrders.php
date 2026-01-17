@@ -48,6 +48,7 @@ class BJSSyncOrders extends Command
 
                     Order::create([
                         'id' => $order->id,
+                        'bjs_id' => (string) $order->id,
                         'user' => $order->user ?? '',
                         'link' => $order->link ?? '',
                         'start_count' => $order->start_count ?? null,

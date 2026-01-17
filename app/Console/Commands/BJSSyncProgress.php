@@ -58,12 +58,8 @@ class BJSSyncProgress extends Command
                         if ($order->bjs_id) {
                             $bjsOrder = $bjs->getOrderByBjsId($order->bjs_id);
                             if ($bjsOrder) {
-                                $bjsStatus = $bjsOrder->status ?? null;
+                                $bjsStatus = $this->mapBjsStatusToEnum($bjsOrder->status ?? null);
                             }
-                        }
-
-                        if (!$bjsStatus && $order->id) {
-                            $bjsStatus = $bjs->getOrderStatusByLocalId($order->id);
                         }
 
                         if ($bjsStatus === null) {
@@ -91,9 +87,7 @@ class BJSSyncProgress extends Command
                         $this->line("  Order #{$order->id}: Skipped - not found on BJS");
                     } else {
                         $successCount++;
-                        if ($order->status->value !== $bjsStatus?->value) {
-                            $statusChangeCount++;
-                        }
+                        $statusChangeCount++;
                         $this->line("  Order #{$order->id}: Synced (BJS status: {$result['bjs_status']})");
                     }
 
@@ -116,5 +110,24 @@ class BJSSyncProgress extends Command
         $this->info("  Status changes: {$statusChangeCount}");
 
         return $failCount > 0 ? Command::FAILURE : Command::SUCCESS;
+    }
+
+    private function mapBjsStatusToEnum(?int $bjsStatus): ?OrderStatus
+    {
+        if ($bjsStatus === null) {
+            return null;
+        }
+
+        return match ($bjsStatus) {
+            0 => OrderStatus::PENDING,
+            1 => OrderStatus::INPROGRESS,
+            2 => OrderStatus::COMPLETED,
+            3 => OrderStatus::PARTIAL,
+            4 => OrderStatus::CANCELED,
+            5 => OrderStatus::PROCESSING,
+            6 => OrderStatus::FAIL,
+            7 => OrderStatus::ERROR,
+            default => null,
+        };
     }
 }
