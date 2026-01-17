@@ -129,11 +129,18 @@
         </div>
     </div>
 </div>
+@endsection
 
 @push('scripts')
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    fetch('/orders/stats')
+    fetch('/orders/stats', {
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json',
+        },
+        credentials: 'same-origin'
+    })
         .then(response => response.json())
         .then(stats => {
             Object.keys(stats).forEach(status => {
