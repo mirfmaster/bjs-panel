@@ -22,6 +22,11 @@ class Order extends Model
         'order_cancel_reason',
         'order_fail_reason',
         'charge',
+        'bjs_id',
+        'status_bjs',
+        'processed_by',
+        'processed_at',
+        'last_synced_at',
     ];
 
     protected function casts(): array
@@ -34,6 +39,14 @@ class Order extends Model
             'remains' => 'integer',
             'order_created_at' => 'datetime',
             'charge' => 'decimal:2',
+            'status_bjs' => OrderStatus::class,
+            'processed_at' => 'datetime',
+            'last_synced_at' => 'datetime',
         ];
+    }
+
+    public function processedBy()
+    {
+        return $this->belongsTo(User::class, 'processed_by');
     }
 }
