@@ -30,8 +30,6 @@ class BJS
 
     private string $accessTokenKey;
 
-    private string $refreshTokenKey;
-
     private string $cookiePath;
 
     private FileCookieJar $cookieJar;
@@ -50,7 +48,6 @@ class BJS
         $this->passwordKey = $keys['credentials']['password'] ?? 'bjs.credentials.password';
         $this->servicesKey = $keys['services'] ?? 'bjs.services';
         $this->accessTokenKey = $keys['api']['access_token'] ?? 'bjs.api.access_token';
-        $this->refreshTokenKey = $keys['api']['refresh_token'] ?? 'bjs.api.refresh_token';
         $this->loginToggleKey = $keys['session']['login_toggle'] ?? 'bjs.session.login_toggle';
         $this->cookiePath = $config['cookie_path'] ?? storage_path('app/bjs-cookies.json');
         $this->cookieJar = new FileCookieJar($this->cookiePath, true);

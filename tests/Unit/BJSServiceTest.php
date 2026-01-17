@@ -34,7 +34,6 @@ class BJSServiceTest extends TestCase
                 'services' => 'bjs.services',
                 'api' => [
                     'access_token' => 'bjs.api.access_token',
-                    'refresh_token' => 'bjs.api.refresh_token',
                 ],
             ],
         ];
@@ -224,7 +223,6 @@ class BJSServiceTest extends TestCase
                 'services' => 'test_services',
                 'api' => [
                     'access_token' => 'test_token',
-                    'refresh_token' => 'test_refresh',
                 ],
             ],
         ];
