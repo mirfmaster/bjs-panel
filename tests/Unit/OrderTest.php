@@ -84,4 +84,69 @@ class OrderTest extends TestCase
 
         $this->assertEquals(10.99, $order->charge);
     }
+
+    public function test_bjs_id_fillable(): void
+    {
+        $order = Order::create([
+            'user' => 'testuser',
+            'link' => 'https://instagram.com/test',
+            'count' => 500,
+            'service_id' => 1,
+            'status' => 0,
+            'order_created_at' => now(),
+            'bjs_id' => 'BJS12345',
+        ]);
+
+        $this->assertEquals('BJS12345', $order->bjs_id);
+    }
+
+    public function test_status_bjs_is_cast_to_enum(): void
+    {
+        $order = Order::create([
+            'id' => 123,
+            'user' => 'testuser',
+            'link' => 'https://instagram.com/test',
+            'count' => 500,
+            'service_id' => 1,
+            'status' => 0,
+            'status_bjs' => 2,
+            'order_created_at' => now(),
+        ]);
+
+        $this->assertInstanceOf(OrderStatus::class, $order->status_bjs);
+        $this->assertEquals(OrderStatus::COMPLETED, $order->status_bjs);
+    }
+
+    public function test_processed_by_is_fillable(): void
+    {
+        $order = Order::create([
+            'user' => 'testuser',
+            'link' => 'https://instagram.com/test',
+            'count' => 500,
+            'service_id' => 1,
+            'status' => 0,
+            'order_created_at' => now(),
+            'processed_by' => null,
+            'processed_at' => now(),
+        ]);
+
+        $this->assertNull($order->processed_by);
+        $this->assertNotNull($order->processed_at);
+    }
+
+    public function test_last_synced_at_is_cast_to_datetime(): void
+    {
+        $order = Order::create([
+            'user' => 'testuser',
+            'link' => 'https://instagram.com/test',
+            'count' => 500,
+            'service_id' => 1,
+            'status' => 0,
+            'order_created_at' => now(),
+            'last_synced_at' => '2026-01-17 12:00:00',
+        ]);
+
+        $this->assertInstanceOf(\Carbon\Carbon::class, $order->last_synced_at);
+        $this->assertEquals('2026-01-17 12:00:00', $order->last_synced_at->format('Y-m-d H:i:s'));
+    }
 }
