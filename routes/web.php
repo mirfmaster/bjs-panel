@@ -17,9 +17,10 @@ Route::middleware('auth')->group(function () {
     Route::get('/orders', [OrdersController::class, 'index'])->name('orders.index');
     Route::get('/orders/stats', [OrdersController::class, 'stats'])->name('orders.stats');
     Route::get('/orders/{order}', [OrdersController::class, 'show'])->name('orders.show');
+    Route::post('/orders/{order}/start', [OrdersController::class, 'startOrder'])->name('orders.start');
+    Route::post('/orders/{order}/complete', [OrdersController::class, 'complete'])->name('orders.complete');
     Route::post('/orders/{order}/cancel', [OrdersController::class, 'cancel'])->name('orders.cancel');
-    Route::post('/orders/{order}/set-start-count', [OrdersController::class, 'setStartCount'])->name('orders.set-start-count');
-    Route::post('/orders/{order}/set-partial', [OrdersController::class, 'setPartial'])->name('orders.set-partial');
+    Route::post('/orders/{order}/partial', [OrdersController::class, 'partial'])->name('orders.partial');
     Route::post('/orders/{order}/set-remains', [OrdersController::class, 'setRemains'])->name('orders.set-remains');
 });
 
