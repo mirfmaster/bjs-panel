@@ -20,7 +20,7 @@ class BJSSyncOrdersTest extends TestCase
         $mockBjs->shouldReceive('getOrdersData')->with(1, 0)->andReturn([
             (object)[
                 'id' => 125,
-                'username' => 'newuser',
+                'user' => 'newuser',
                 'link' => 'https://instagram.com/new',
                 'count' => 1000,
                 'status' => 0,
@@ -35,6 +35,7 @@ class BJSSyncOrdersTest extends TestCase
         $this->artisan('bjs:sync-orders');
 
         $this->assertDatabaseHas('orders', [
+            'bjs_id' => '125',
             'user' => 'newuser',
             'link' => 'https://instagram.com/new',
             'count' => 1000,

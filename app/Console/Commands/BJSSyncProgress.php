@@ -26,7 +26,7 @@ class BJSSyncProgress extends Command
             ->when($syncedAtThreshold, function ($query) use ($syncedAtThreshold) {
                 return $query->where(function ($q) use ($syncedAtThreshold) {
                     $q->whereNull('last_synced_at')
-                      ->orWhere('last_synced_at', '<', $syncedAtThreshold);
+                        ->orWhere('last_synced_at', '<', $syncedAtThreshold);
                 });
             })
             ->orderBy('service_id')
@@ -53,18 +53,13 @@ class BJSSyncProgress extends Command
             foreach ($serviceOrders as $order) {
                 try {
                     $result = DB::transaction(function () use ($bjs, $order) {
-                        $bjsStatus = null;
+                        $bjsOrder = $bjs->getOrderByBjsId($order->bjs_id);
 
-                        if ($order->bjs_id) {
-                            $bjsOrder = $bjs->getOrderByBjsId($order->bjs_id);
-                            if ($bjsOrder) {
-                                $bjsStatus = $this->mapBjsStatusToEnum($bjsOrder->status ?? null);
-                            }
-                        }
-
-                        if ($bjsStatus === null) {
+                        if (!$bjsOrder) {
                             return ['action' => 'skipped', 'reason' => 'not_found'];
                         }
+
+                        $bjsStatus = $this->mapBjsStatusToEnum($bjsOrder->status ?? null);
 
                         $order->status_bjs = $bjsStatus;
                         $order->last_synced_at = now();
@@ -90,7 +85,6 @@ class BJSSyncProgress extends Command
                         $statusChangeCount++;
                         $this->line("  Order #{$order->id}: Synced (BJS status: {$result['bjs_status']})");
                     }
-
                 } catch (\Throwable $e) {
                     $failCount++;
                     $this->error("  Order #{$order->id}: Failed - {$e->getMessage()}");

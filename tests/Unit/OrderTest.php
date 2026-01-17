@@ -14,6 +14,7 @@ class OrderTest extends TestCase
     public function test_order_has_correct_fillable_fields(): void
     {
         $order = Order::create([
+            'bjs_id' => 'BJS123',
             'user' => 'testuser',
             'link' => 'https://instagram.com/test',
             'start_count' => 100,
@@ -41,6 +42,7 @@ class OrderTest extends TestCase
     public function test_status_is_cast_to_enum(): void
     {
         $order = Order::create([
+            'bjs_id' => 'BJS123',
             'id' => 123,
             'user' => 'testuser',
             'link' => 'https://instagram.com/test',
@@ -57,6 +59,7 @@ class OrderTest extends TestCase
     public function test_order_created_at_is_cast_to_datetime(): void
     {
         $order = Order::create([
+            'bjs_id' => 'BJS123',
             'id' => 123,
             'user' => 'testuser',
             'link' => 'https://instagram.com/test',
@@ -73,6 +76,7 @@ class OrderTest extends TestCase
     public function test_charge_is_cast_to_decimal(): void
     {
         $order = Order::create([
+            'bjs_id' => 'BJS123',
             'user' => 'testuser',
             'link' => 'https://instagram.com/test',
             'count' => 500,
@@ -103,6 +107,7 @@ class OrderTest extends TestCase
     public function test_status_bjs_is_cast_to_enum(): void
     {
         $order = Order::create([
+            'bjs_id' => 'BJS123',
             'id' => 123,
             'user' => 'testuser',
             'link' => 'https://instagram.com/test',
@@ -120,6 +125,7 @@ class OrderTest extends TestCase
     public function test_processed_by_is_fillable(): void
     {
         $order = Order::create([
+            'bjs_id' => 'BJS123',
             'user' => 'testuser',
             'link' => 'https://instagram.com/test',
             'count' => 500,
@@ -137,6 +143,7 @@ class OrderTest extends TestCase
     public function test_last_synced_at_is_cast_to_datetime(): void
     {
         $order = Order::create([
+            'bjs_id' => 'BJS123',
             'user' => 'testuser',
             'link' => 'https://instagram.com/test',
             'count' => 500,
