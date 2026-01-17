@@ -268,4 +268,67 @@ class BJS
 
         return $services[$index] ?? null;
     }
+
+    public function getOrderStatusByLocalId(int $localOrderId): ?OrderStatus
+    {
+        $response = $this->requestApi('get', "/admin/api/orders/view/$localOrderId");
+        $data = json_decode($response->getBody(), false);
+
+        if (!isset($data->data->order->status)) {
+            return null;
+        }
+
+        return $this->mapBjsStatusToEnum($data->data->order->status);
+    }
+
+    public function getOrderByLocalId(int $localOrderId): ?object
+    {
+        $response = $this->requestApi('get', "/admin/api/orders/view/$localOrderId");
+        $data = json_decode($response->getBody(), false);
+
+        return $data->data->order ?? null;
+    }
+
+    public function getOrderStatusByBjsId(string $bjsId): ?OrderStatus
+    {
+        $response = $this->requestApi('get', "/admin/api/orders/list?oid=$bjsId&page_size=1");
+        $data = json_decode($response->getBody(), false);
+
+        $orders = $data->data->orders ?? [];
+
+        if (empty($orders)) {
+            return null;
+        }
+
+        return $this->mapBjsStatusToEnum($orders[0]->status ?? null);
+    }
+
+    public function getOrderByBjsId(string $bjsId): ?object
+    {
+        $response = $this->requestApi('get', "/admin/api/orders/list?oid=$bjsId&page_size=1");
+        $data = json_decode($response->getBody(), false);
+
+        $orders = $data->data->orders ?? [];
+
+        return $orders[0] ?? null;
+    }
+
+    private function mapBjsStatusToEnum(?int $bjsStatus): ?OrderStatus
+    {
+        if ($bjsStatus === null) {
+            return null;
+        }
+
+        return match ($bjsStatus) {
+            0 => OrderStatus::PENDING,
+            1 => OrderStatus::INPROGRESS,
+            2 => OrderStatus::COMPLETED,
+            3 => OrderStatus::PARTIAL,
+            4 => OrderStatus::CANCELED,
+            5 => OrderStatus::PROCESSING,
+            6 => OrderStatus::FAIL,
+            7 => OrderStatus::ERROR,
+            default => null,
+        };
+    }
 }
