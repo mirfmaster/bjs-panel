@@ -9,3 +9,4 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('bjs:sync-orders')->everyFiveMinutes()->withoutOverlapping();
+Schedule::command('bjs:sync-progress')->everyMinute()->withoutOverlapping();
